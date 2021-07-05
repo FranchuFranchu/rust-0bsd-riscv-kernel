@@ -153,5 +153,40 @@ switch_to_supervisor_frame:
 	
 	restore_volatile_registers
 	sret
+
+
+# Essentially like s_trap_vector, but smode-to-smode
+do_syscall_internal:
 	
+	store_volatile_registers
+	# Now t5 and sscratch have the trap frame pointer
 	
+	# Get ready to go into Rust (trap.rs)
+	# csrw	sie, zero
+	
+	la 		sp, _stack_start
+	mv	a0, ra
+	sd		a0, XLEN*32(t5)
+	li		a1, 0
+	csrr	a2, 9
+	ld		a0, XLEN*32(t5)
+	ld		a3, XLEN*33(t5)
+	csrr	a4, sstatus
+	csrr	a5, sscratch
+	
+	# Usually, We don't want to write into the user's stack or whomever
+	# messed with us here.
+	# We haven't gotten userspace to work yet, so we can assume that this interrupt was triggered in kernel mode
+	
+	# la		t0, KERNEL_STACK_END
+	# ld		sp, 0(t0)
+	call	trap_handler
+	
+	# When we get here, we've returned from m_trap, restore registers
+	# and return.
+	# m_trap will return the return address via a0.
+
+	mv	ra, a0
+	
+	restore_volatile_registers
+	ret

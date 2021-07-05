@@ -7,19 +7,31 @@ pub fn schedule() -> usize {
 	let process_sched_queue = unsafe { PROCESS_SCHED_QUEUE.assume_init_mut() };
 	let mut pid = 0;
 	
-	for this_pid in process_sched_queue.iter() {
-		println!("pid {:?}", this_pid);
-		
-		println!("sp 0x{:x}", crate::cpu::read_sp());
-		println!("tf {:?}", &unsafe { crate::process::PROCESSES.assume_init_mut() }.read().get(&this_pid).unwrap().read().trap_frame.pid as *const usize);
-		let process = try_get_process(this_pid).read().trap_frame.pid;
-		println!("{:?}", unsafe { crate::process::PROCESSES.assume_init_mut() }.read().get(&this_pid));
-		println!("{:?}", "finished");
-		assert!(*this_pid == try_get_process(this_pid).read().trap_frame.pid, "Process's internal trap frame PID and process index in the process map do not match!"); 
-		if try_get_process(this_pid).read().can_be_scheduled() {
-			pid = *this_pid;
-			break;
+	// Generally speaking, we're going to have at most one process deleted each time schedule() is called
+	// so we don't need a vector to store removed indexes
+	let mut removed_index = 0;
+	
+	for (idx, this_process) in process_sched_queue.iter().enumerate() {
+		debug!("{:?}", this_process.strong_count());
+		match this_process.upgrade()   {
+			// The process still exists
+			Some(strong) => {
+				debug!("{:?}", "Still exists");
+				if strong.read().can_be_scheduled() {
+					pid = strong.read().trap_frame.pid;
+					break;
+				}
+			},
+			// The process doesn't exist anymore. Remove it from the sched queue
+			None => {
+				removed_index = idx;
+			},
 		}
+		
+	}
+	
+	if removed_index != 0 {
+		process_sched_queue.remove(removed_index);
 	}
 	
 	if pid == 0 {

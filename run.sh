@@ -9,7 +9,7 @@ qemu-system-riscv64 \
 	-machine virt \
 	-cpu rv64\
 	-serial stdio\
-	-d guest_errors,unimp \
+	-d guest_errors,unimp,int \
 	-smp 1 \
 	-m 128M \
 	-kernel $@

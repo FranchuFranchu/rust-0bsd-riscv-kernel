@@ -8,6 +8,8 @@ edition = "2018"
 bitflags = "1.0"
 volatile-register = "0.2"
 spin = "*"
+num_enum = {version = "*", default-features = false}
+log = "0.4"
 
 [profile.dev]
 opt-level = 0

@@ -1,8 +1,8 @@
 use core::{mem::MaybeUninit, pin::Pin};
 use alloc::{boxed::Box, collections::{BTreeMap, VecDeque}, sync::{Arc, Weak}};
-use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use spin::{RwLock};
 
-use crate::trap::TrapFrame;
+use crate::{cpu, trap::TrapFrame};
 use crate::cpu::Registers;
 
 // 0BSD
@@ -66,7 +66,7 @@ impl Process {
 		// Get a raw pointer to the Box's data (which is the trap frame)
 		let frame_pointer = Pin::as_ref(&self.trap_frame).get_ref() as *const TrapFrame as *mut TrapFrame;
 		
-		println!("Switch to frame at \x1b[32m{:?}\x1b[0m", frame_pointer);
+		debug!("Switch to frame at \x1b[32m{:?}\x1b[0m", frame_pointer);
 		
 		// Switch to the trap frame
 		unsafe { switch_to_supervisor_frame(frame_pointer) };
@@ -78,7 +78,7 @@ impl Process {
 pub static mut PROCESSES: MaybeUninit<RwLock<BTreeMap<usize, Arc<RwLock<Process>>>>> = MaybeUninit::uninit();
 // PIDs each hart is executing
 static mut HART_PIDS: MaybeUninit<RwLock<VecDeque<usize>>> = MaybeUninit::uninit();
-pub static mut PROCESS_SCHED_QUEUE: MaybeUninit<VecDeque<usize>> = MaybeUninit::uninit();
+pub static mut PROCESS_SCHED_QUEUE: MaybeUninit<VecDeque<Weak<RwLock<Process>>>> = MaybeUninit::uninit();
 
 pub fn init() {
 	unsafe { PROCESSES = MaybeUninit::new(RwLock::new(BTreeMap::new())) };
@@ -96,7 +96,7 @@ pub fn finish_executing_process(pid: usize) {
 		return;
 	}
 	try_get_process(&pid).write().state = ProcessState::Pending;
-	println!("Made process pending");
+	debug!("Made process pending");
 }
 
 /// Creates a supervisor process and returns PID
@@ -109,7 +109,7 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
 			break;
 		}
 	}
-	println!("chosen pid: {}", pid);
+	debug!("chosen pid: {}", pid);
 	
 	let mut process = Process {
 		is_supervisor: true,
@@ -121,7 +121,8 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
 	
 	// Set the initial state for the process
 	process.trap_frame.general_registers[Registers::A0.idx()] = a0;
-	process.trap_frame.general_registers[Registers::Ra.idx()] = process_return_address as usize; 
+	// NOTE change the function for user mode
+	process.trap_frame.general_registers[Registers::Ra.idx()] = process_return_address_supervisor as usize; 
 	process.trap_frame.pc = function;
 	
 	process.trap_frame.pid = pid;
@@ -141,26 +142,21 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
 	
 	
 	
-	unsafe { PROCESSES.assume_init_mut() }.write().insert(pid, process);
 	// Schedule the process
-	unsafe { PROCESS_SCHED_QUEUE.assume_init_mut().push_back(pid) }
+	unsafe { PROCESS_SCHED_QUEUE.assume_init_mut().push_back(Arc::downgrade(&process)) }
 	
-	println!("{:?}", unsafe { PROCESSES.assume_init_mut() }.read());
+	unsafe { PROCESSES.assume_init_mut() }.write().insert(pid, process);
+	
+	debug!("{:?}", unsafe { PROCESSES.assume_init_mut() }.read());
 	
 	pid
 }
 
 #[no_mangle]
-pub extern "C" fn process_return_address() {
-	// TODO tidy up this
-	println!("A process has returned. This shouldn't really happen");
-	//finish_executing_process();
-	
-	
-	
-	loop {
-		crate::cpu::wfi();
-	}
+pub extern "C" fn process_return_address_supervisor() {
+	debug!("{:?}", "Process return address");
+	// Run a syscall that deletes the process
+	crate::syscall::syscall_exit(unsafe { cpu::read_sscratch().as_mut().unwrap_unchecked() }, 0);
 }
 
 pub fn new_supervisor_process(function: fn()) -> usize {
@@ -173,7 +169,7 @@ pub fn new_supervisor_process_argument(function: fn(usize), a0: usize) -> usize 
 
 
 pub fn delete_process(pid: usize) {
-	println!("Remove {:?}", pid);
+	debug!("Remove {:?}", pid);
 	unsafe { PROCESSES.assume_init_mut() }.write().remove(&pid);
 }
 

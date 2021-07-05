@@ -1,7 +1,7 @@
 pub fn test_task() {
-	println!("{:?}","Task 1");
-	loop {
-		crate::cpu::wfi();
-		println!("{:?}", "Re-entered");
-	};
+	info!("{:?}","Task 1 reached");
+}
+
+pub fn test_task_2() {
+	info!("{:?}","Task 2 reached");
 }

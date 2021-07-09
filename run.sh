@@ -1,11 +1,9 @@
-GDB=
-
-
-if [[ 0 ]]; then
-	: #lxterminal -e 'riscv64-elf-gdb -ex "target remote localhost:1234" '
+if [ $GDB == "yes" ]; then
+	lxterminal -e 'riscv64-elf-gdb target/riscv64gc-unknown-none-elf/debug/rust-kernel-test -ex "target remote localhost:1234" '
+	export QEMUOPTS=-s $QEMUOPTS
 fi
 
-qemu-system-riscv64 \
+qemu-system-riscv64 -s \
 	-machine virt \
 	-cpu rv64\
 	-serial stdio\

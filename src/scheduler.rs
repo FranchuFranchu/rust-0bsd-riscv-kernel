@@ -1,10 +1,10 @@
 // 0BSD
 
-use crate::process::{PROCESS_SCHED_QUEUE, try_get_process};
+use crate::{process::{PROCESS_SCHED_QUEUE}, sbi};
 
 // Return the next PID to be run
 pub fn schedule() -> usize {
-	let process_sched_queue = unsafe { PROCESS_SCHED_QUEUE.assume_init_mut() };
+	let mut process_sched_queue = PROCESS_SCHED_QUEUE.write();
 	let mut pid = 0;
 	
 	// Generally speaking, we're going to have at most one process deleted each time schedule() is called
@@ -42,4 +42,8 @@ pub fn schedule() -> usize {
 	process_sched_queue.rotate_left(1);
 	
 	return pid;
+}
+
+pub fn schedule_next_slice(slices: u64) {
+	sbi::set_relative_timer(slices * 50_000_0).unwrap();
 }

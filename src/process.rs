@@ -1,9 +1,12 @@
-use core::{mem::MaybeUninit, pin::Pin};
-use alloc::{boxed::Box, collections::{BTreeMap, VecDeque}, sync::{Arc, Weak}};
+use core::{pin::Pin};
+use alloc::{boxed::Box, collections::{BTreeMap}, sync::{Arc, Weak}, vec::Vec};
 use spin::{RwLock};
 
 use crate::{cpu, trap::TrapFrame};
 use crate::cpu::Registers;
+use aligned::{A16, Aligned};
+
+pub const TASK_STACK_SIZE: usize = 4096 * 8;
 
 // 0BSD
 #[derive(Debug)]
@@ -33,7 +36,7 @@ pub struct Process {
 	
 	/// For supervisor mode the kernel initially creates a small stack page for this process
 	/// This is where it's stored
-	pub kernel_allocated_stack: Option<Box<[u8; 4096]>>
+	pub kernel_allocated_stack: Option<Box<Aligned<A16, [u8; TASK_STACK_SIZE]>>>
 }
 
 extern "C" {
@@ -66,7 +69,9 @@ impl Process {
 		// Get a raw pointer to the Box's data (which is the trap frame)
 		let frame_pointer = Pin::as_ref(&self.trap_frame).get_ref() as *const TrapFrame as *mut TrapFrame;
 		
-		debug!("Switch to frame at \x1b[32m{:?}\x1b[0m", frame_pointer);
+		unsafe { frame_pointer.as_ref().unwrap().print() };
+		
+		info!("Switch to frame at \x1b[32m{:?}\x1b[0m (PC {:x})", frame_pointer, unsafe {(*frame_pointer).pc});
 		
 		// Switch to the trap frame
 		unsafe { switch_to_supervisor_frame(frame_pointer) };
@@ -75,15 +80,10 @@ impl Process {
 }
 
 
-pub static mut PROCESSES: MaybeUninit<RwLock<BTreeMap<usize, Arc<RwLock<Process>>>>> = MaybeUninit::uninit();
-// PIDs each hart is executing
-static mut HART_PIDS: MaybeUninit<RwLock<VecDeque<usize>>> = MaybeUninit::uninit();
-pub static mut PROCESS_SCHED_QUEUE: MaybeUninit<VecDeque<Weak<RwLock<Process>>>> = MaybeUninit::uninit();
+pub static PROCESSES: RwLock<BTreeMap<usize, Arc<RwLock<Process>>>> = RwLock::new(BTreeMap::new());
+pub static PROCESS_SCHED_QUEUE: RwLock<Vec<Weak<RwLock<Process>>>> = RwLock::new(Vec::new());
 
 pub fn init() {
-	unsafe { PROCESSES = MaybeUninit::new(RwLock::new(BTreeMap::new())) };
-	unsafe { PROCESS_SCHED_QUEUE = MaybeUninit::new(VecDeque::new()) };
-	unsafe { HART_PIDS = MaybeUninit::new(RwLock::new(VecDeque::new())) };
 }
 
 // All functions after this are only safe when init() has been called
@@ -104,7 +104,7 @@ pub fn finish_executing_process(pid: usize) {
 pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
 	let mut pid = 2;
 	for this_pid in pid.. {
-		if !(unsafe { PROCESSES.assume_init_mut().read().contains_key(&this_pid) }) {
+		if !PROCESSES.read().contains_key(&this_pid) {
 			pid = this_pid;
 			break;
 		}
@@ -123,17 +123,18 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
 	process.trap_frame.general_registers[Registers::A0.idx()] = a0;
 	// NOTE change the function for user mode
 	process.trap_frame.general_registers[Registers::Ra.idx()] = process_return_address_supervisor as usize; 
+	
+	println!("{:?}", &process.trap_frame.general_registers[Registers::Ra.idx()] as *const usize);
+	
 	process.trap_frame.pc = function;
 	
 	process.trap_frame.pid = pid;
 	
 	
 	// Create a small stack for this process
-	let process_stack = [0u8; 4096];
-	// Move it to a Box
-	let process_stack = Box::new(process_stack);
+	let process_stack = alloc::vec![-1; TASK_STACK_SIZE].into_boxed_slice();
 	
-	process.trap_frame.general_registers[Registers::Sp.idx()] = process_stack.as_ptr() as usize + 4096; 
+	process.trap_frame.general_registers[Registers::Sp.idx()] = process_stack.as_ptr() as usize + TASK_STACK_SIZE - 0x10; 
 	
 	// Wrap the process in a lock
 	let process = RwLock::new(process);
@@ -143,11 +144,11 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
 	
 	
 	// Schedule the process
-	unsafe { PROCESS_SCHED_QUEUE.assume_init_mut().push_back(Arc::downgrade(&process)) }
+	PROCESS_SCHED_QUEUE.write().push(Arc::downgrade(&process));
 	
-	unsafe { PROCESSES.assume_init_mut() }.write().insert(pid, process);
+	PROCESSES.write().insert(pid, process);
 	
-	debug!("{:?}", unsafe { PROCESSES.assume_init_mut() }.read());
+	debug!("{:?}", PROCESSES.read());
 	
 	pid
 }
@@ -170,16 +171,16 @@ pub fn new_supervisor_process_argument(function: fn(usize), a0: usize) -> usize 
 
 pub fn delete_process(pid: usize) {
 	debug!("Remove {:?}", pid);
-	unsafe { PROCESSES.assume_init_mut() }.write().remove(&pid);
+	PROCESSES.write().remove(&pid);
 }
 
 // This returns an empty Weak if the process doesn't exist
 pub fn weak_get_process(pid: &usize) -> Weak<RwLock<Process>>  {
-	unsafe { PROCESSES.assume_init_mut() }.read().get(pid).map(|arc| Arc::downgrade(arc)).unwrap_or(Weak::new())
+	PROCESSES.read().get(pid).map(|arc| Arc::downgrade(arc)).unwrap_or(Weak::new())
 }
 
 // This assumes that the process exists and panics if it doesn't
 // Also acts as a strong reference to the process
 pub fn try_get_process(pid: &usize) -> Arc<RwLock<Process>>  {
-	unsafe { PROCESSES.assume_init_mut() }.read().get(pid).unwrap().clone()
+	PROCESSES.read().get(pid).unwrap().clone()
 }

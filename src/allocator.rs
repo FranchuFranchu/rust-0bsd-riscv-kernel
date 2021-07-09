@@ -132,7 +132,7 @@ use spin::{Mutex, MutexGuard};
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr;
 
-// We're using this because we can't impl for foreign types
+/// We're using this because we can't impl for foreign types
 pub struct MutexWrapper<T>(Mutex<T>);
 
 impl<T> MutexWrapper<T> {
@@ -153,6 +153,7 @@ unsafe impl GlobalAlloc for MutexWrapper<LinkedListAllocator> {
 
         if let Some((region, alloc_start)) = allocator.find_region(size, align) {
             let alloc_end = alloc_start.checked_add(size).expect("overflow");
+            // println!("{:x} {:x}", region.end_addr(), alloc_end);
             let excess_size = region.end_addr() - alloc_end;
             if excess_size > 0 {
                 allocator.add_free_region(alloc_end, excess_size);

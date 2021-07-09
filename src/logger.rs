@@ -1,11 +1,12 @@
 use log::{Record, Level, Metadata};
 
+use crate::cpu::Registers;
+
 pub struct ColorfulLogger;
 
 impl log::Log for ColorfulLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-    	return true;
-        metadata.level() <= Level::Info;
+        metadata.level() <= Level::Info
     }
 
     fn log(&self, record: &Record) {
@@ -21,14 +22,14 @@ impl log::Log for ColorfulLogger {
 			    	"\x1b[1mINFO \x1b[0m"
 			    }
 			    Level::Debug => {
-			    	"\x1b[1m1;96DEBUG\x1b[0m"
+			    	"\x1b[1;96mDEBUG\x1b[0m"
 			    }
 			    Level::Trace => {
-			    	"\x1b[1m96TRACE\x1b[0m"
+			    	"\x1b[96mTRACE\x1b[0m"
 			    }
         	};
         	
-            println!("[{}] {}", prefix, record.args());
+            println!("{} [{}] {}", record.module_path().unwrap_or(""), prefix, record.args());
         }
     }
 

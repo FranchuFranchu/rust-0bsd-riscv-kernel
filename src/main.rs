@@ -6,14 +6,16 @@
 	const_mut_refs,
 	panic_info_message,
 	maybe_uninit_ref,
-	option_result_unwrap_unchecked,
+	option_result_unwrap_unchecked,	
 	unchecked_math,
+	const_btree_new,
 	global_asm)]
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 #![no_main]
 #![allow(incomplete_features)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
+
 
 use core::panic::PanicInfo;
 
@@ -38,6 +40,8 @@ extern "C" {
 
 use allocator::{LinkedListAllocator, MutexWrapper};
 
+use crate::plic::Plic0;
+
 
 
 #[global_allocator]
@@ -50,6 +54,9 @@ pub mod std_macros;
 pub mod process;
 pub mod test_task;
 pub mod logger;
+pub mod fdt;
+pub mod plic;
+pub mod hart;
 
 // The boot frame is the frame that is active in the boot thread
 // It needs to be statically allocated because it has to be there before
@@ -64,6 +71,10 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 		panic!("main() called more than once!");
 	}
 	
+	unsafe { crate::drivers::uart::Uart::new(0x1000_0000).setup() };
+	
+	
+	
 	// SAFETY: We're the only hart, there's no way the data gets changed by someone else meanwhile
 	unsafe { BOOT_FRAME.hartid = hartid }
 	unsafe { BOOT_FRAME.pid = 1 }
@@ -73,8 +84,8 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	
 	// Now, set up the logger
 	log::set_logger(&logger::KERNEL_LOGGER).unwrap();
-	log::set_max_level(log::LevelFilter::Info);
-	
+	log::set_max_level(log::LevelFilter::Trace);
+	info!("Entered kernel, logging set up.");
 	
 	
 	// SAFETY: identity_map is valid when the root page is valid, which in this case is true
@@ -82,16 +93,15 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	unsafe { paging::sv39::identity_map(&mut paging::ROOT_PAGE as *mut paging::Table) }
 	
 	// Initialize memory allocation
-	
-	
-	
 	let heap_end = unsafe {&_heap_end as *const c_void as usize};
 	let heap_start = unsafe {&_heap_start as *const c_void as usize};
+	
 	// SAFETY: This relies on the assumption that heap_end and heap_start are valid addresses (which are provided by the linker script)
 	// If they aren't, then it's pointless
 	unsafe { ALLOCATOR.lock().init(heap_start, heap_end - heap_start) }; 
 	
-	// SAFETY: s_trap_vector is a valid trap vector
+	
+	// SAFETY: s_trap_vector is a valid trap vector so no problems
 	unsafe { cpu::write_stvec(s_trap_vector as usize) };
 	
 	/*
@@ -104,7 +114,19 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	*/
 	
 	
+	// Initialize the device tree assuming that opaque contains a pointer to the DT
+	// (standard behaviour in QEMU)
+	fdt::init(opaque as _);
 	
+	hart::add_boot_hart();
+	
+	// Set up the external interrupts
+	let plic = Plic0::new_with_fdt();
+	plic.set_enabled(10, true);
+	plic.set_threshold(0);
+	plic.set_priority(10, 3);
+	
+	// Finally, enable interrupts in the cpu level
 	// SAFETY: We're enabling interrupts, since we've set stvec already that's not dangerous
 	unsafe { 
 		use cpu::csr::*;
@@ -113,15 +135,20 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 		
 		let mut sstatus: usize;
 		llvm_asm!("csrr $0, sstatus" : "=r"(sstatus));
-		sstatus |= 3;
+		sstatus |= 1 << 1;
 		llvm_asm!("csrw sstatus, $0" :: "r"(sstatus));
 	}
 	
-	
-	process::init();
 	process::new_supervisor_process(test_task::test_task);
 	process::new_supervisor_process(test_task::test_task_2);
-	sbi::set_relative_timer(1);
+	
+	
+	println!("{:?}", unsafe { (*cpu::read_sscratch()).pid });
+	
+	fdt::root().pretty(0);
+
+	scheduler::schedule_next_slice(0);
+	
 	
 	loop {
 		cpu::wfi();
@@ -167,8 +194,11 @@ fn panic(info: &PanicInfo) -> ! {
 	}
     
 
+	// Shutdown immediately
+	sbi::shutdown(0);
+
     loop {
-    	// Now, poll the UART until we get a Ctrl+C
+    	// Now (if we haven't shut down for some reason), poll the UART until we get a Ctrl+C
     	// and then shutdown
     	match unsafe {crate::drivers::uart::Uart::new(0x1000_0000).get()} {
     		Some(3) => crate::sbi::shutdown(0),

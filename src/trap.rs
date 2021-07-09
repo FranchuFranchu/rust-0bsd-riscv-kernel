@@ -1,6 +1,6 @@
 use alloc::sync::Arc;
 
-use crate::{process::try_get_process, sbi};
+use crate::{drivers::uart, hart::get_this_hart_meta, plic, process::try_get_process, sbi, scheduler::schedule_next_slice};
 
 /// A pointer to this struct is placed in sscratch
 #[derive(Default, Debug, Clone)] // No copy because they really shouldn't be copied and used without changing the PID
@@ -15,6 +15,21 @@ pub struct TrapFrame {
 impl TrapFrame {
 	pub const fn zeroed() -> Self {
 		Self { general_registers: [0; 32], hartid: 0, pid: 0, pc: 0}
+	}
+	pub fn print(&self) {
+		println!("{:?}", "trap");
+		for (idx, i) in self.general_registers[1..].iter().enumerate() {
+			print!("0x{:0<8x} ", i);
+			if idx % 4 == 0 {
+				println!();
+			}
+		}
+	}
+}
+
+impl Drop for TrapFrame {
+	fn drop(&mut self) {
+		warn!("Trap frame dropped");
 	}
 }
 
@@ -32,7 +47,6 @@ pub extern "C" fn trap_handler(
 	let cause = cause & 0xFFF;
 	debug!("Trap from PID {:x}", unsafe { (*frame).pid });
 	debug!("\x1b[1;35mV ENTER TRAP\x1b[0m");
-	
 	
 	if is_interrupt {
 		match cause {
@@ -81,13 +95,17 @@ pub extern "C" fn trap_handler(
 				};
 				
 				
-				sbi::set_relative_timer(1000000).unwrap();
+				schedule_next_slice(1);
 				debug!("\x1b[1;36m^ RUN TRAP\x1b[0m");
 				guard.run_once();
 			}
 			// Supervisor external interrupt
 			9 => {
-				
+				// Assume it's because of the PLIC0
+				let meta = get_this_hart_meta().unwrap();
+				let interrupt_id = meta.plic.claim_highest_priority();
+				meta.plic.complete(interrupt_id);
+				unsafe { uart::Uart::new(0x10000000) }.get().unwrap();
 			}
 			_ => {
 				debug!("Unknown interrupt {}", cause);
@@ -106,5 +124,6 @@ pub extern "C" fn trap_handler(
 		}
 	}
 	debug!("\x1b[1;36m^ EXIT TRAP\x1b[0m");
+
 	return epc;
 }

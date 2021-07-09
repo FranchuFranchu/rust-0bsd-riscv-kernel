@@ -82,21 +82,42 @@ pub fn read_sscratch() -> *mut crate::trap::TrapFrame {
 pub fn read_sp() -> usize {
 	let value: usize;
 	unsafe { llvm_asm!("mv $0, sp" : "=r"(value) ::: "volatile") };
-	value as _
+	value
 }
 
 #[inline(always)]
 pub fn read_sstatus() -> usize {
 	let value: usize;
 	unsafe { llvm_asm!("csrr $0, sstatus" : "=r"(value) ::: "volatile") };
-	value as _
+	value
+}
+
+#[inline(always)]
+pub fn read_time() -> usize {
+	let value: usize;
+	unsafe { llvm_asm!("csrr $0, time" : "=r"(value) ::: "volatile") };
+	value
+}
+
+#[inline(always)]
+pub fn read_cycle() -> usize {
+	let value: usize;
+	unsafe { llvm_asm!("csrr $0, cycle" : "=r"(value) ::: "volatile") };
+	value
+}
+
+/// Gets hartid from sscratch
+/// This assumes that sscratch holds a valid value
+pub fn load_hartid() -> usize {
+	unsafe { (*read_sscratch()).hartid }
 }
 
 
 #[inline(always)]
 pub fn wfi() {
-	// Justification for unsafe:
+	// SAFETY:
 	// wfi never changes any register state and is always safe
+	// it's essentially a processor hint and can act as a NOP
 	unsafe {
 		llvm_asm!("wfi");
 	}	

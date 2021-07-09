@@ -3,7 +3,7 @@
 use volatile_register::RW;
 
 
-#[repr(usize)]
+#[repr(u8)]
 enum Ns16550aInterruptEnableRegister {
 	ReadAvailable = 1 << 0,
 	WriteAvailable = 1 << 1,
@@ -13,7 +13,7 @@ enum Ns16550aInterruptEnableRegister {
 	LowPower = 1 << 5,
 }
 
-#[repr(usize)]
+#[repr(u8)]
 enum Ns16550aInterruptIdentificationRegister {
 	InterruptPending = 1 << 0,
 	
@@ -55,16 +55,22 @@ impl fmt::Write for Ns16550a {
 }
 
 impl Ns16550a {
+	// SAFETY: address should be a valid MMIO 16550 address
 	pub unsafe fn new(address: usize) -> Self {
 		Self {
 			registers: address as *mut Ns16550aRegisters
 		}
 	}
-	// Explanation on why this is safe:
-	// The unsafety was done when creating this instance
-	// Writing to a proved-existing register shouldn't cause anything unsafe
+	
+	pub fn setup(&mut self) {
+		unsafe { (*self.registers).interrupt_enable.write((*self.registers).interrupt_enable.read() | Ns16550aInterruptEnableRegister::ReadAvailable as u8) }
+	}
+	
 	#[inline(always)]
 	pub fn put(&mut self, value: u8) {
+		// SAFETY:
+		// The unsafety was done when creating this instance
+		// Writing to a proved-existing register shouldn't cause anything unsafe
 		unsafe { (*self.registers).byte_io.write(value) };
 	}
 	

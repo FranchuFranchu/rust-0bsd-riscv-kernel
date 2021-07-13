@@ -140,11 +140,15 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	}
 	
 	process::new_supervisor_process(test_task::test_task);
+	process::new_supervisor_process(test_task::test_task_2);
 	
 	
 	println!("{:?}", unsafe { (*cpu::read_sscratch()).pid });
+	
+	fdt::root().pretty(0);
 
 	scheduler::schedule_next_slice(0);
+	
 	
 	loop {
 		cpu::wfi();

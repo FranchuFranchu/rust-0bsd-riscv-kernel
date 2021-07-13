@@ -1,6 +1,6 @@
 // See https://github.com/devicetree-org/devicetree-specification/releases/tag/v0.3
 
-use core::mem::{MaybeUninit, align_of};
+use core::mem::{MaybeUninit};
 use itertools::Itertools;
 use alloc::{boxed::Box, collections::{BTreeMap, VecDeque}, format, string::String, sync::Arc, vec::Vec};
 use cstr_core::CStr;
@@ -105,7 +105,7 @@ impl Node {
 		}
 		println!("{}}}", "    ".repeat(indent));
 	}
-	pub fn walk<F: FnMut(&'static Node)>(&'static self, mut closure: &mut F ) {
+	pub fn walk<F: FnMut(&'static Node)>(&'static self, closure: &mut F ) {
 		closure(self);
 		for i in self.children() {
 			i.walk(closure);
@@ -113,7 +113,7 @@ impl Node {
 	}
 	/// The lifetimes for this function aren't <'static> because that would be an aliasing rule violation
 	/// (closure mutably borrows Node forever so no one else can mut borrow it again )
-	pub fn walk_mut<F: FnMut(&mut Node)>(&mut self, mut closure: &mut F ) {
+	pub fn walk_mut<F: FnMut(&mut Node)>(&mut self, closure: &mut F ) {
 		closure(self);
 		for i in self.children_mut() {
 			i.walk_mut(closure);

@@ -132,7 +132,7 @@ use spin::{Mutex, MutexGuard};
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr;
 
-// We're using this because we can't impl for foreign types
+/// We're using this because we can't impl for foreign types
 pub struct MutexWrapper<T>(Mutex<T>);
 
 impl<T> MutexWrapper<T> {

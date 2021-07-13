@@ -1,6 +1,6 @@
 // 0BSD
 
-use crate::{process::{PROCESS_SCHED_QUEUE, try_get_process}, sbi};
+use crate::{process::{PROCESS_SCHED_QUEUE}, sbi};
 
 // Return the next PID to be run
 pub fn schedule() -> usize {
@@ -45,5 +45,5 @@ pub fn schedule() -> usize {
 }
 
 pub fn schedule_next_slice(slices: u64) {
-	sbi::set_relative_timer(slices * 10_000_000).unwrap();
+	sbi::set_relative_timer(slices * 50_000_0).unwrap();
 }

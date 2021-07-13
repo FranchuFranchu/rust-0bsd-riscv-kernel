@@ -1,7 +1,7 @@
 use alloc::{collections::BTreeMap, sync::Arc};
 use spin::RwLock;
 
-use crate::{cpu::load_hartid, plic::{self, Plic0}};
+use crate::{cpu::load_hartid, plic::{Plic0}};
 
 
 // Data associated with a hart

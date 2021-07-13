@@ -1,5 +1,7 @@
 use log::{Record, Level, Metadata};
 
+use crate::cpu::Registers;
+
 pub struct ColorfulLogger;
 
 impl log::Log for ColorfulLogger {

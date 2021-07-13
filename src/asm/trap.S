@@ -144,9 +144,6 @@ s_trap_vector:
 
 .global switch_to_supervisor_frame	
 switch_to_supervisor_frame:
-	# Store the current registers in the old trap frame (so that we can restore them when we return)
-	store_volatile_registers
-	
 	csrw sscratch, a0
 	ld t0, XLEN*32(a0)
 	csrw sepc, t0

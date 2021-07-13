@@ -1,10 +1,12 @@
-use core::{mem::MaybeUninit, pin::Pin};
+use core::{pin::Pin};
 use alloc::{boxed::Box, collections::{BTreeMap}, sync::{Arc, Weak}, vec::Vec};
 use spin::{RwLock};
 
 use crate::{cpu, trap::TrapFrame};
 use crate::cpu::Registers;
 use aligned::{A16, Aligned};
+
+pub const TASK_STACK_SIZE: usize = 4096 * 8;
 
 // 0BSD
 #[derive(Debug)]
@@ -34,7 +36,7 @@ pub struct Process {
 	
 	/// For supervisor mode the kernel initially creates a small stack page for this process
 	/// This is where it's stored
-	pub kernel_allocated_stack: Option<Box<Aligned<A16, [u8; 4096]>>>
+	pub kernel_allocated_stack: Option<Box<Aligned<A16, [u8; TASK_STACK_SIZE]>>>
 }
 
 extern "C" {
@@ -67,7 +69,9 @@ impl Process {
 		// Get a raw pointer to the Box's data (which is the trap frame)
 		let frame_pointer = Pin::as_ref(&self.trap_frame).get_ref() as *const TrapFrame as *mut TrapFrame;
 		
-		debug!("Switch to frame at \x1b[32m{:?}\x1b[0m", frame_pointer);
+		unsafe { frame_pointer.as_ref().unwrap().print() };
+		
+		info!("Switch to frame at \x1b[32m{:?}\x1b[0m (PC {:x})", frame_pointer, unsafe {(*frame_pointer).pc});
 		
 		// Switch to the trap frame
 		unsafe { switch_to_supervisor_frame(frame_pointer) };
@@ -119,17 +123,18 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
 	process.trap_frame.general_registers[Registers::A0.idx()] = a0;
 	// NOTE change the function for user mode
 	process.trap_frame.general_registers[Registers::Ra.idx()] = process_return_address_supervisor as usize; 
+	
+	println!("{:?}", &process.trap_frame.general_registers[Registers::Ra.idx()] as *const usize);
+	
 	process.trap_frame.pc = function;
 	
 	process.trap_frame.pid = pid;
 	
 	
 	// Create a small stack for this process
-	let process_stack = [0u8; 4096];
-	// Move it to a Box
-	let process_stack = Box::new(process_stack);
+	let process_stack = alloc::vec![-1; TASK_STACK_SIZE].into_boxed_slice();
 	
-	process.trap_frame.general_registers[Registers::Sp.idx()] = process_stack.as_ptr() as usize + 4096 - 0x10; 
+	process.trap_frame.general_registers[Registers::Sp.idx()] = process_stack.as_ptr() as usize + TASK_STACK_SIZE - 0x10; 
 	
 	// Wrap the process in a lock
 	let process = RwLock::new(process);

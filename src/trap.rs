@@ -1,6 +1,6 @@
 use alloc::sync::Arc;
 
-use crate::{drivers::uart, hart::get_this_hart_meta, plic, process::try_get_process, sbi, scheduler::schedule_next_slice};
+use crate::{drivers::uart, hart::get_this_hart_meta, process::try_get_process, sbi, scheduler::schedule_next_slice};
 
 /// A pointer to this struct is placed in sscratch
 #[derive(Default, Debug, Clone)] // No copy because they really shouldn't be copied and used without changing the PID
@@ -36,7 +36,7 @@ impl Drop for TrapFrame {
 
 #[no_mangle]
 pub extern "C" fn trap_handler(
-	mut epc: usize,
+	epc: usize,
 	tval: usize,
 	cause: usize,
 	hartid: usize,
@@ -58,6 +58,8 @@ pub extern "C" fn trap_handler(
 			}
 			// Supervisor timer interrupt
 			5 => {
+				unsafe { frame.as_ref().unwrap().print() };
+			
 				// First, we set the next timer infitely far into the future so that it doesn't get triggered again
 				sbi::set_absolute_timer(2_u64.pow(63)).unwrap();
 				
@@ -69,7 +71,7 @@ pub extern "C" fn trap_handler(
 				}
 				
 				
-				let mut lock = try_get_process(&new_pid);
+				let lock = try_get_process(&new_pid);
 				
 				// Switch to the next process
 				
@@ -116,7 +118,7 @@ pub extern "C" fn trap_handler(
 			8 | 9 | 10 | 11 => {
 				debug!("Envionment call to us happened!");
 				loop {};
-			}
+			},
 			_ => {
 				debug!("Error with cause: {:?}", cause);
 				panic!("Non-interrupt trap");

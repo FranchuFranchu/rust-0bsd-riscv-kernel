@@ -1,8 +1,10 @@
 use core::ops::{BitAnd, BitXor};
+use core::task::Context;
+use core::pin::Pin;
 
-use alloc::{collections::BTreeSet, vec::Vec};
+use alloc::{collections::BTreeSet, vec::Vec, boxed::Box};
 
-use crate::cpu;
+use crate::{cpu, process};
 
 // random-ish function I just made up
 fn twist(value: &mut usize) -> usize {
@@ -12,7 +14,6 @@ fn twist(value: &mut usize) -> usize {
 
 pub fn test_task() {
 	
-	info!("{:?}","Calculating primes...");
 	// Calculate primes
 	let mut sieve = Vec::new();
 	let mut not_removed = BTreeSet::new();
@@ -38,13 +39,11 @@ pub fn test_task() {
 			}
 		}
 	}
-	info!("Finished");
 	
 	
 }
 
 pub fn test_task_2() {
-	info!("{:?}","Allocating a whole lot of memory...");
 	
 	
 	
@@ -64,7 +63,35 @@ pub fn test_task_2() {
 			assert!(*i == i as *const usize as usize);
 		}
 	}
-	info!("Finished");
 	drop(vector_vec);
-	info!("Finished dropping");
+	
+	use crate::timeout::TimeoutFuture;
+	// On QEMU, 10_000_000 timebaser is 1 second
+	let mut future = TimeoutFuture { for_time: cpu::get_time() + 10_000_000 };
+	let waker = process::Process::this().write().construct_waker();
+	use core::future::Future;
+	
+	info!("Scheduling timeout..");
+	
+	// Poll the future until it resolves
+	while TimeoutFuture::poll(Pin::new(&mut future), &mut Context::from_waker(&waker)) == core::task::Poll::Pending {
+		// Trigger a "yield" smode-to-smode syscall
+		trigger_yield_syscall();
+	}
+	
+	info!("Timeout finished");
+}
+
+#[inline]
+fn trigger_yield_syscall() {
+	unsafe {
+		llvm_asm!(r"
+			li a7, 2
+			# Trigger a timer interrupt
+			csrr t0, sip
+			# Set SSIP
+			ori t0, t0, 2
+			csrw sip, t0
+		"::: "a7", "t0")
+	}
 }

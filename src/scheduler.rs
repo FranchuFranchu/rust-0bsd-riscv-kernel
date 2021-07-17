@@ -1,6 +1,6 @@
 // 0BSD
 
-use crate::{process::{PROCESS_SCHED_QUEUE}, sbi};
+use crate::{cpu, process::{PROCESS_SCHED_QUEUE}, sbi, timer_queue};
 
 // Return the next PID to be run
 pub fn schedule() -> usize {
@@ -10,6 +10,7 @@ pub fn schedule() -> usize {
 	// Generally speaking, we're going to have at most one process deleted each time schedule() is called
 	// so we don't need a vector to store removed indexes
 	let mut removed_index = 0;
+	
 	
 	for (idx, this_process) in process_sched_queue.iter().enumerate() {
 		debug!("{:?}", this_process.strong_count());
@@ -45,5 +46,6 @@ pub fn schedule() -> usize {
 }
 
 pub fn schedule_next_slice(slices: u64) {
-	sbi::set_relative_timer(slices * 50_000_0).unwrap();
+	use timer_queue::{schedule_at, TimerEvent, TimerEventCause::*};
+	schedule_at(TimerEvent { instant: cpu::get_time() + slices * 10_000_00, cause: ContextSwitch} );
 }

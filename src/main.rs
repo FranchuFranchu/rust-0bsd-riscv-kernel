@@ -57,6 +57,7 @@ pub mod logger;
 pub mod fdt;
 pub mod plic;
 pub mod hart;
+pub mod timeout;
 
 // The boot frame is the frame that is active in the boot thread
 // It needs to be statically allocated because it has to be there before
@@ -85,7 +86,6 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	// Now, set up the logger
 	log::set_logger(&logger::KERNEL_LOGGER).unwrap();
 	log::set_max_level(log::LevelFilter::Trace);
-	info!("Entered kernel, logging set up.");
 	
 	
 	// SAFETY: identity_map is valid when the root page is valid, which in this case is true
@@ -141,14 +141,17 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	
 	process::new_supervisor_process(test_task::test_task);
 	process::new_supervisor_process(test_task::test_task_2);
+	process::new_supervisor_process(process::idle_forever_entry_point);
 	
 	
 	println!("{:?}", unsafe { (*cpu::read_sscratch()).pid });
 	
 	fdt::root().pretty(0);
 
-	scheduler::schedule_next_slice(0);
+	timer_queue::init();
 	
+	scheduler::schedule_next_slice(0);
+	timer_queue::schedule_next();
 	
 	loop {
 		cpu::wfi();
@@ -211,6 +214,8 @@ pub mod asm;
 pub mod allocator;
 #[macro_use]
 pub mod cpu;
+pub mod context_switch;
+pub mod timer_queue;
 pub mod trap;
 pub mod paging;
 pub mod syscall;

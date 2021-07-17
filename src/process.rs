@@ -1,12 +1,22 @@
-use core::{pin::Pin};
+use core::{pin::Pin, future::Future};
 use alloc::{boxed::Box, collections::{BTreeMap}, sync::{Arc, Weak}, vec::Vec};
-use spin::{RwLock};
+use spin::{RwLock, RwLockWriteGuard, RwLockReadGuard};
 
-use crate::{cpu, trap::TrapFrame};
+use core::task::{Waker, RawWaker, RawWakerVTable};
+use crate::{context_switch::{self, context_switch}, cpu, scheduler::schedule_next_slice, syscall::syscall_exit, trap::TrapFrame};
 use crate::cpu::Registers;
 use aligned::{A16, Aligned};
 
 pub const TASK_STACK_SIZE: usize = 4096 * 8;
+pub const PROCESS_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
+			/* clone */ Process::waker_clone,
+			/* wake */ Process::waker_wake,
+			/* wake_by_ref */ Process::waker_wake_by_ref,
+			/* drop */ Process::waker_drop,
+		);
+pub static PROCESSES: RwLock<BTreeMap<usize, Arc<RwLock<Process>>>> = RwLock::new(BTreeMap::new());
+pub static PROCESS_SCHED_QUEUE: RwLock<Vec<Weak<RwLock<Process>>>> = RwLock::new(Vec::new());
+
 
 // 0BSD
 #[derive(Debug)]
@@ -69,24 +79,71 @@ impl Process {
 		// Get a raw pointer to the Box's data (which is the trap frame)
 		let frame_pointer = Pin::as_ref(&self.trap_frame).get_ref() as *const TrapFrame as *mut TrapFrame;
 		
-		unsafe { frame_pointer.as_ref().unwrap().print() };
-		
-		info!("Switch to frame at \x1b[32m{:?}\x1b[0m (PC {:x})", frame_pointer, unsafe {(*frame_pointer).pc});
+		debug!("Switch to frame at \x1b[32m{:?}\x1b[0m (PC {:x})", frame_pointer, unsafe {(*frame_pointer).pc});
 		
 		// Switch to the trap frame
 		unsafe { switch_to_supervisor_frame(frame_pointer) };
 		unreachable!();
 	}
+	
+	// These are the waker methods
+	// They turn a process in Yielded state to a process in Pending state
+	// The data parameter is the return value of into_raw for a Box<Weak<Process>>
+	pub unsafe fn waker_clone(data: *const ()) -> RawWaker {
+		let obj = Box::from_raw(data as *mut Weak<RwLock<Self>>);
+		let new_waker = RawWaker::new(Box::into_raw(obj.clone()) as _, &PROCESS_WAKER_VTABLE);
+		Box::leak(obj);
+		new_waker
+	}
+	pub unsafe fn waker_wake(data: *const ()) {
+		Self::waker_wake_by_ref(data)
+	}
+	pub unsafe fn waker_wake_by_ref(data: *const ()) {
+		// The box re-acquires ownership of the RwLock<Self>
+		let process: Box<Weak<RwLock<Self>>> = Box::from_raw(data as _);
+		let process_internal = process.upgrade().expect("Waited process is gone!");
+		process_internal.write().state = ProcessState::Pending;
+		// Make the box lose ownership of the RwLock<Self>
+		Box::leak(process);
+	}
+	pub unsafe fn waker_drop(data: *const ()) {
+		// Re-create the box for this waker and then drop it to prevent memory leaks
+		drop(Box::from_raw(data as *mut Weak<RwLock<Self>>));
+	}
+	
+	/// This creates a Waker that makes this process a Pending process when woken
+	pub fn construct_waker(&self) -> Waker {
+		// Create a weak pointer to a RwLock<Self> and then erase its type
+		let raw_pointer = Box::into_raw(Box::new(weak_get_process(&self.trap_frame.pid))) as *const ();
+		// Create a waker with the pointer as the data
+		unsafe { Waker::from_raw(RawWaker::new(raw_pointer, &PROCESS_WAKER_VTABLE)) }
+	}
+	
+	/// Polls a future from this process. The waker is this processes' waker
+	pub fn poll_future<T: Future>(&mut self, future: Pin<&mut T>) -> core::task::Poll<<T as Future>::Output> {
+		use core::task::Poll;
+		let poll_result = future.poll(&mut core::task::Context::from_waker(&self.construct_waker()));
+		
+		match poll_result { 
+			Poll::Pending => {
+				// Mark the task as yielded
+				self.state = ProcessState::Yielded;
+				schedule_next_slice(0);
+			},
+			_ => {},
+		}
+		
+		return poll_result
+	}
+	pub fn this() -> Arc<RwLock<Process>> {
+		unsafe { try_get_process(&cpu::read_sscratch().as_ref().expect("Not running on a process!").pid) }
+	}
 }
-
-
-pub static PROCESSES: RwLock<BTreeMap<usize, Arc<RwLock<Process>>>> = RwLock::new(BTreeMap::new());
-pub static PROCESS_SCHED_QUEUE: RwLock<Vec<Weak<RwLock<Process>>>> = RwLock::new(Vec::new());
-
 pub fn init() {
 }
 
 // All functions after this are only safe when init() has been called
+// (but init doesn't do anything yet, so nothing bad happens)
 
 
 // Marks the process executed as the current hart as pending
@@ -99,6 +156,7 @@ pub fn finish_executing_process(pid: usize) {
 	debug!("Made process pending");
 }
 
+
 /// Creates a supervisor process and returns PID
 /// SAFETY: Only when function is a valid function pointer (with)
 pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
@@ -107,9 +165,8 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
 		if !PROCESSES.read().contains_key(&this_pid) {
 			pid = this_pid;
 			break;
-		}
+		 }
 	}
-	debug!("chosen pid: {}", pid);
 	
 	let mut process = Process {
 		is_supervisor: true,
@@ -124,15 +181,14 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
 	// NOTE change the function for user mode
 	process.trap_frame.general_registers[Registers::Ra.idx()] = process_return_address_supervisor as usize; 
 	
-	println!("{:?}", &process.trap_frame.general_registers[Registers::Ra.idx()] as *const usize);
 	
 	process.trap_frame.pc = function;
 	
 	process.trap_frame.pid = pid;
 	
-	
 	// Create a small stack for this process
-	let process_stack = alloc::vec![-1; TASK_STACK_SIZE].into_boxed_slice();
+	let process_stack = alloc::vec![0; TASK_STACK_SIZE].into_boxed_slice();
+	
 	
 	process.trap_frame.general_registers[Registers::Sp.idx()] = process_stack.as_ptr() as usize + TASK_STACK_SIZE - 0x10; 
 	
@@ -157,7 +213,16 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
 pub extern "C" fn process_return_address_supervisor() {
 	debug!("{:?}", "Process return address");
 	// Run a syscall that deletes the process
-	crate::syscall::syscall_exit(unsafe { cpu::read_sscratch().as_mut().unwrap_unchecked() }, 0);
+	unsafe {
+		llvm_asm!(r"
+			li a7, 1
+			# Trigger a timer interrupt
+			csrr t0, sip
+			# Set SSIP
+			ori t0, t0, 2
+			csrw sip, t0
+		"::: "a7", "t0")
+	}
 }
 
 pub fn new_supervisor_process(function: fn()) -> usize {
@@ -183,4 +248,21 @@ pub fn weak_get_process(pid: &usize) -> Weak<RwLock<Process>>  {
 // Also acts as a strong reference to the process
 pub fn try_get_process(pid: &usize) -> Arc<RwLock<Process>>  {
 	PROCESSES.read().get(pid).unwrap().clone()
+}
+
+fn idle_entry_point() {
+	cpu::wfi();
+}
+
+pub fn idle_forever_entry_point() {
+	loop {
+		cpu::wfi();
+	}
+}
+
+/// Starts a process that wfi()s once, immediately switches to the process, then exits. 
+/// Must be called from an interrupt context.
+pub fn idle() -> ! {
+	let pid = new_supervisor_process(idle_entry_point);
+	context_switch::context_switch(&pid)
 }

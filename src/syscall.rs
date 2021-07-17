@@ -1,6 +1,6 @@
 use num_enum::{FromPrimitive, IntoPrimitive};
 
-use crate::{cpu::Registers, trap::TrapFrame};
+use crate::{context_switch, cpu::Registers, process::{self, ProcessState}, trap::TrapFrame};
 
 #[repr(usize)]
 #[derive(IntoPrimitive, FromPrimitive)]
@@ -8,6 +8,8 @@ use crate::{cpu::Registers, trap::TrapFrame};
 pub enum SyscallNumbers {
 	// Kills the task
     Exit = 1,
+    // Marks this task as "yielded" until it gets woken up by a Waker
+    Yield = 2,
     // File descriptor operations
     Open = 0x10,
     Read,
@@ -39,7 +41,7 @@ pub enum SyscallNumbers {
     Unknown,
 }
 
-fn do_syscall(frame: *mut TrapFrame) {
+pub fn do_syscall(frame: *mut TrapFrame) {
     // First, assume that the frame is a valid pointer
     // (this may break aliasing rules though!)
     let frame_raw = frame;
@@ -51,6 +53,9 @@ fn do_syscall(frame: *mut TrapFrame) {
         Exit => {
             syscall_exit(frame, 0);
         },
+        Yield => {
+            syscall_yield(frame);
+        },
         Unknown => {
             debug!("Unknown syscall{:?}", frame.general_registers[Registers::A7.idx()]);
         },
@@ -61,9 +66,13 @@ fn do_syscall(frame: *mut TrapFrame) {
 }
 
 pub fn syscall_exit(frame: &mut TrapFrame, return_code: usize) {
-    // TODO also tell the scheduler to switch processes
     crate::process::delete_process(frame.pid);
-    loop {
-        crate::cpu::wfi();
-    }
+    context_switch::schedule_and_switch();
+}
+
+pub fn syscall_yield(frame: &mut TrapFrame) {
+    // Set this process's state to yielded
+    process::try_get_process(&frame.pid).write().state = ProcessState::Yielded;
+    // Immediately cause a context switch for this hart
+    context_switch::schedule_and_switch();
 }

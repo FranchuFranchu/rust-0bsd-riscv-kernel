@@ -147,7 +147,6 @@ switch_to_supervisor_frame:
 	csrw sscratch, a0
 	ld t0, XLEN*32(a0)
 	csrw sepc, t0
-	
 	restore_volatile_registers
 	sret
 

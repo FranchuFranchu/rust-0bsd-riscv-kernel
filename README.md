@@ -7,6 +7,7 @@ Files not made by me (and possibly not 0BSD-licensed) are src/asm/trap.S and src
 Todo:
 
 - [X] Fix issue with stack overflows overwriting trap frames in tasks (fixed by enlarging task stack)
+- [ ] A way to handle what happens when a process holds a lock and an interrupt triggers, and the interrupt handler also tries to lock the same lock (for example in process.rs)
 - [ ] Prevent stack overflows with a guard page
 - [ ] Virtio
 - [ ] Virtio block driver

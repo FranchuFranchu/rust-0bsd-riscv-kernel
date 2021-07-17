@@ -48,6 +48,11 @@ pub unsafe fn write_sie(value: usize) {
 }
 
 #[inline(always)]
+pub unsafe fn write_sip(value: usize) {
+	llvm_asm!("csrw sip, $0" :: "r"(value) :: "volatile")
+}
+
+#[inline(always)]
 pub unsafe fn write_stvec(value: usize) {
 	llvm_asm!("csrw stvec, $0" :: "r"(value) :: "volatile")
 }
@@ -82,6 +87,13 @@ pub fn read_sscratch() -> *mut crate::trap::TrapFrame {
 pub fn read_sp() -> usize {
 	let value: usize;
 	unsafe { llvm_asm!("mv $0, sp" : "=r"(value) ::: "volatile") };
+	value
+}
+
+#[inline(always)]
+pub fn read_sip() -> usize {
+	let value: usize;
+	unsafe { llvm_asm!("csrr $0, sip" : "=r"(value) ::: "volatile") };
 	value
 }
 

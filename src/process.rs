@@ -3,7 +3,7 @@ use alloc::{boxed::Box, collections::{BTreeMap}, sync::{Arc, Weak}, vec::Vec};
 use spin::{RwLock, RwLockWriteGuard, RwLockReadGuard};
 
 use core::task::{Waker, RawWaker, RawWakerVTable};
-use crate::{context_switch::{self, context_switch}, cpu, scheduler::schedule_next_slice, syscall::syscall_exit, trap::TrapFrame};
+use crate::{context_switch::{self, context_switch}, cpu::{self, load_hartid, read_sscratch}, scheduler::schedule_next_slice, syscall::syscall_exit, trap::TrapFrame};
 use crate::cpu::Registers;
 use aligned::{A16, Aligned};
 
@@ -76,10 +76,20 @@ impl Process {
 	// Uses this hart to execute this process until the next context switch happens
 	// This function essentially never returns because it runs until an interrupt happens
 	pub fn run_once(&mut self) -> ! {
+		// The hart ID that we will be executing in is the same one as the current one.
+		self.trap_frame.hartid = load_hartid();
+		
+		// Use the same stack for interrupts
+		self.trap_frame.interrupt_stack = unsafe { (*read_sscratch()).interrupt_stack };
+		
 		// Get a raw pointer to the Box's data (which is the trap frame)
 		let frame_pointer = Pin::as_ref(&self.trap_frame).get_ref() as *const TrapFrame as *mut TrapFrame;
 		
+		
 		debug!("Switch to frame at \x1b[32m{:?}\x1b[0m (PC {:x})", frame_pointer, unsafe {(*frame_pointer).pc});
+		
+		
+		self.state = ProcessState::Running;
 		
 		// Switch to the trap frame
 		unsafe { switch_to_supervisor_frame(frame_pointer) };
@@ -156,10 +166,8 @@ pub fn finish_executing_process(pid: usize) {
 	debug!("Made process pending");
 }
 
-
-/// Creates a supervisor process and returns PID
-/// SAFETY: Only when function is a valid function pointer (with)
-pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
+/// Finds an unused PID
+pub fn allocate_pid() -> usize {
 	let mut pid = 2;
 	for this_pid in pid.. {
 		if !PROCESSES.read().contains_key(&this_pid) {
@@ -167,6 +175,13 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
 			break;
 		 }
 	}
+	pid
+}
+
+/// Creates a supervisor process and returns PID
+/// SAFETY: Only when function is a valid function pointer (with)
+pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
+	let pid = allocate_pid();
 	
 	let mut process = Process {
 		is_supervisor: true,
@@ -183,8 +198,8 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
 	
 	
 	process.trap_frame.pc = function;
-	
 	process.trap_frame.pid = pid;
+	process.trap_frame.hartid = usize::MAX;
 	
 	// Create a small stack for this process
 	let process_stack = alloc::vec![0; TASK_STACK_SIZE].into_boxed_slice();
@@ -263,6 +278,9 @@ pub fn idle_forever_entry_point() {
 /// Starts a process that wfi()s once, immediately switches to the process, then exits. 
 /// Must be called from an interrupt context.
 pub fn idle() -> ! {
+	loop {
+		cpu::wfi();
+	}
 	let pid = new_supervisor_process(idle_entry_point);
 	context_switch::context_switch(&pid)
 }

@@ -52,7 +52,7 @@ pub struct Plic0 {
 impl Plic0 {
 	pub fn new_with_fdt() -> Self {
 		Self {
-			base_addr: crate::fdt::root().get("soc/plic@").unwrap().unit_address.unwrap(),
+			base_addr: crate::fdt::root().read().get("soc/plic@").unwrap().unit_address.unwrap(),
 			context_number: get_context_number()
 		}
 	}

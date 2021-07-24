@@ -1,20 +1,22 @@
 use alloc::sync::Arc;
 
-use crate::{context_switch, cpu, drivers::uart, hart::get_this_hart_meta, process::try_get_process, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
+use crate::{context_switch, cpu::{self, BOOT_HART, load_hartid, read_sp}, drivers::uart, hart::get_this_hart_meta, process::try_get_process, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
 
 /// A pointer to this struct is placed in sscratch
 #[derive(Default, Debug, Clone)] // No copy because they really shouldn't be copied and used without changing the PID
 #[repr(C)]
 pub struct TrapFrame {
 	pub general_registers: [usize; 32],
-	pub pc: usize,
-	pub hartid: usize,
-	pub pid: usize,
+	pub pc: usize, // 32
+	pub hartid: usize, // 33
+	pub pid: usize, // 34
+	/// This may be shared between different processes executing the same hart
+	pub interrupt_stack: usize,
 }
 
 impl TrapFrame {
 	pub const fn zeroed() -> Self {
-		Self { general_registers: [0; 32], hartid: 0, pid: 0, pc: 0}
+		Self { general_registers: [0; 32], hartid: 0, pid: 0, pc: 0, interrupt_stack: 0}
 	}
 	pub fn print(&self) {
 		println!("{:?}", "trap");
@@ -48,6 +50,7 @@ pub extern "C" fn trap_handler(
 	debug!("Trap from PID {:x}", unsafe { (*frame).pid });
 	debug!("\x1b[1;35mV ENTER TRAP\x1b[0m");
 	
+	
 	if is_interrupt {
 		match cause {
 			// See table 3.6 of the Privileged specification
@@ -58,6 +61,7 @@ pub extern "C" fn trap_handler(
 				// First, clear the STIP bit
 				unsafe { cpu::write_sip(cpu::read_sip() & !2) };
 				 
+				debug!("\x1b[1;36m^ SYSCALL TRAP\x1b[0m");
 				syscall::do_syscall(frame);
 			}
 			// Supervisor timer interrupt
@@ -78,12 +82,11 @@ pub extern "C" fn trap_handler(
 					ContextSwitch => {
 						debug!("scheduling...");
 						
-						
 						schedule_next_slice(1);
 						
 						timer_queue::schedule_next();
 						
-						
+						context_switch::make_this_process_pending();
 						debug!("\x1b[1;36m^ RUN TRAP\x1b[0m");
 						
 						context_switch::schedule_and_switch();
@@ -111,11 +114,11 @@ pub extern "C" fn trap_handler(
 			},
 			_ => {
 				debug!("Error with cause: {:?} *pc: {}", cause, unsafe { *((*frame).pc as *const u32)});
-				panic!("Non-interrupt trap");
+				loop {} //panic!("Non-interrupt trap");
 			}
 		}
 	}
-	debug!("\x1b[1;36m^ EXIT TRAP\x1b[0m");
+	info!("\x1b[1;36m^ EXIT TRAP {}\x1b[0m", load_hartid());
 
 	return epc;
 }

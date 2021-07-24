@@ -5,13 +5,14 @@ use itertools::Itertools;
 use alloc::{boxed::Box, collections::{BTreeMap, VecDeque}, format, string::String, sync::Arc, vec::Vec};
 use cstr_core::CStr;
 use alloc::borrow::ToOwned;
+use spin::RwLock;
 
-use crate::alloc::string::ToString;
+use crate::{alloc::string::ToString, cpu::read_sscratch};
 
 use num_enum::{FromPrimitive, IntoPrimitive};
 
 static mut DEVICE_TREE_BASE: *const FdtHeader = core::ptr::null();
-static mut DEVICE_TREE_ROOT: MaybeUninit<Node> = MaybeUninit::uninit();
+static mut DEVICE_TREE_ROOT: MaybeUninit<RwLock<Node>> = MaybeUninit::uninit();
 
 
 #[derive(Debug)]
@@ -325,7 +326,7 @@ pub fn build(mut token: *const u32) -> Node {
 
 
 // SAFETY: Only when init() has been called
-pub fn root() -> &'static Node {
+pub fn root() -> &'static RwLock<Node> {
 	unsafe { DEVICE_TREE_ROOT.assume_init_ref() }
 }
 
@@ -334,7 +335,8 @@ pub fn root() -> &'static Node {
 pub fn link_phandles() {
 	// Construct a phandle map
 	let mut phandles: BTreeMap<u32, &'static Node> = BTreeMap::new();
-	root().walk(&mut |node: &'static Node| {
+	let borrow = unsafe { DEVICE_TREE_ROOT.assume_init_mut() }.get_mut();
+	borrow.walk(&mut |node: &'static Node| {
 		if let Some(PropertyValue::u32(phandle)) = node.properties.get("phandle") {
 			phandles.insert(*phandle, node);
 		}
@@ -342,7 +344,7 @@ pub fn link_phandles() {
 	
 	// Apply the map to the values
 	// Here we unsafely mutably borrow the FDT
-	unsafe { DEVICE_TREE_ROOT.assume_init_mut() }.walk_mut(&mut |node: &mut Node| {
+	unsafe { DEVICE_TREE_ROOT.assume_init_mut() }.write().walk_mut(&mut |node: &mut Node| {
 		for value in node.properties.values_mut() {
 			if let PropertyValue::PHandleRaw(handle) = value {
 				if let Some(target_node) = phandles.get(handle) {
@@ -355,11 +357,17 @@ pub fn link_phandles() {
 	});
 }
 
-pub fn init(header_addr: *const FdtHeader) -> &'static Node {
+pub fn init(header_addr: *const FdtHeader) -> &'static RwLock<Node> {
 	unsafe { DEVICE_TREE_BASE = header_addr };
 	let token_addr = unsafe { (DEVICE_TREE_BASE as *const u8 ).add((*DEVICE_TREE_BASE).offset_dt_struct.swap_bytes() as usize) } as *const u32;
 	let root_tree = build(token_addr);
-	unsafe { DEVICE_TREE_ROOT = MaybeUninit::new(root_tree) };
+	unsafe { DEVICE_TREE_ROOT = MaybeUninit::new(RwLock::new(root_tree)) };
 	link_phandles();
 	root()
 }
+
+/*
+pub fn get_cpu_node() -> &'static Node {
+	let cpus = root().read().get("cpus").expect("No 'cpus' node in device tree!");
+	&cpus.children["cpu"][&Some(unsafe { (*read_sscratch()).hartid })]
+}*/

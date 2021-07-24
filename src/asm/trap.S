@@ -114,7 +114,7 @@ s_trap_vector:
 	# csrw	sie, zero
 	
 	.set XLEN, 8
-	la 		sp, _stack_start
+	ld 		sp, XLEN*35(t5)
 	csrr	a0, sepc
 	sd		a0, XLEN*32(t5)
 	csrr	a1, stval
@@ -139,7 +139,8 @@ s_trap_vector:
 	csrw	sepc, a0
 	
 	restore_volatile_registers
-	
+
+trap_exit:
 	sret
 
 .global switch_to_supervisor_frame	

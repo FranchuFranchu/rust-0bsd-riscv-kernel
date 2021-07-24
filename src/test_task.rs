@@ -4,6 +4,7 @@ use core::pin::Pin;
 
 use alloc::{collections::BTreeSet, vec::Vec, boxed::Box};
 
+use crate::cpu::load_hartid;
 use crate::{cpu, process};
 
 // random-ish function I just made up
@@ -13,7 +14,6 @@ fn twist(value: &mut usize) -> usize {
 }
 
 pub fn test_task() {
-	
 	// Calculate primes
 	let mut sieve = Vec::new();
 	let mut not_removed = BTreeSet::new();
@@ -39,14 +39,9 @@ pub fn test_task() {
 			}
 		}
 	}
-	
-	
 }
 
 pub fn test_task_2() {
-	
-	
-	
 	// Allocating tons of memory
 	let mut twisted_value = 0;
 	let mut vector_vec = Vec::with_capacity(10);
@@ -66,10 +61,11 @@ pub fn test_task_2() {
 	drop(vector_vec);
 	
 	use crate::timeout::TimeoutFuture;
-	// On QEMU, 10_000_000 timebaser is 1 second
+	// On QEMU, 10_000_000 timebase is 1 second
 	let mut future = TimeoutFuture { for_time: cpu::get_time() + 10_000_000 };
 	let waker = process::Process::this().write().construct_waker();
 	use core::future::Future;
+	
 	
 	info!("Scheduling timeout..");
 	

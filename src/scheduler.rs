@@ -1,6 +1,6 @@
 // 0BSD
 
-use crate::{cpu, process::{PROCESS_SCHED_QUEUE}, sbi, timer_queue};
+use crate::{cpu, process::{PROCESSES, PROCESS_SCHED_QUEUE}, sbi, timer_queue};
 
 // Return the next PID to be run
 pub fn schedule() -> usize {
@@ -13,7 +13,6 @@ pub fn schedule() -> usize {
 	
 	
 	for (idx, this_process) in process_sched_queue.iter().enumerate() {
-		debug!("{:?}", this_process.strong_count());
 		match this_process.upgrade()   {
 			// The process still exists
 			Some(strong) => {

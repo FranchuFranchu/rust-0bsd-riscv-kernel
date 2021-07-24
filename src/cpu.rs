@@ -59,7 +59,10 @@ pub unsafe fn write_stvec(value: usize) {
 
 #[inline(always)]
 pub unsafe fn write_satp(value: usize) {
-	llvm_asm!("csrw satp, $0" :: "r"(value) :: "volatile")
+	llvm_asm!("
+		csrw satp, $0
+		sfence.vma
+		" :: "r"(value) :: "volatile")
 }
 
 
@@ -125,6 +128,10 @@ pub fn load_hartid() -> usize {
 }
 
 
+use core::sync::atomic::AtomicUsize;
+pub static BOOT_HART: AtomicUsize = AtomicUsize::new(0);
+
+
 #[inline(always)]
 pub fn wfi() {
 	// SAFETY:
@@ -139,6 +146,7 @@ pub fn fence_vma() {
 	unsafe { llvm_asm!("sfence.vma zero, zero") };
 }
 
+/// This is provided by the CLINT
 const MMIO_MTIME: *const u64 = 0x0200_BFF8 as *const u64;
 
 pub fn get_time() -> u64 {

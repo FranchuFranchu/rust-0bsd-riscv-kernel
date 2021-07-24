@@ -45,13 +45,12 @@ impl Future for TimeoutFuture {
                 Err(index) => {insert_position = index},
             }
         	
+            // Remember to wake up this future when necessary
             WAITING_TIMEOUTS.write().insert(insert_position, (self.clone(), cx.waker().clone()));
             
+            // Trigger a timer interrupt in the target time
             use crate::timer_queue::{TimerEvent, TimerEventCause};
             timer_queue::schedule_at(TimerEvent { instant: self.for_time, cause: TimerEventCause::TimeoutFuture,  });
-            
-            // Trigger a timer interrupt in the target time
-            
             
         	return Poll::Pending;
         }

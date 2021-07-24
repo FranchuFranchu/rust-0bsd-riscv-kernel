@@ -1,5 +1,5 @@
-.global do_syscall
-do_syscall:
+.global do_supervisor_syscall
+do_supervisor_syscall:
 	addi sp, sp, -16
 	sd ra, (sp)
 	mv t0, a7
@@ -12,7 +12,10 @@ do_syscall:
 	mv a6, a5
 	mv a7, t0
 	
-	call do_syscall_internal
+	# Set the supervisor software interrupt pending bit (SSIP)
+	csrr t0, sip
+	ori t0, t0, 1 << 1
+	csrw sip, t0
 	
 	ld ra, (sp)
 	addi sp, sp, 16

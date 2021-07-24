@@ -40,7 +40,7 @@ impl SBIError {
     }
 }
 
-pub unsafe fn call_sbi_0(extension_id: usize, function_id: usize) -> Result<usize, SBIError> {
+pub unsafe extern "C" fn call_sbi_0(extension_id: usize, function_id: usize) -> Result<usize, SBIError> {
 	let error_code: usize;
 	let return_value: usize;
 	llvm_asm!(r"
@@ -58,7 +58,7 @@ pub unsafe fn call_sbi_0(extension_id: usize, function_id: usize) -> Result<usiz
 	}
 }
 
-pub unsafe fn call_sbi_1(extension_id: usize, function_id: usize, a0: usize) -> Result<usize, SBIError> {
+pub unsafe extern "C" fn call_sbi_1(extension_id: usize, function_id: usize, a0: usize) -> Result<usize, SBIError> {
 	let error_code: usize;
 	let return_value: usize;
 	llvm_asm!(r"
@@ -77,7 +77,7 @@ pub unsafe fn call_sbi_1(extension_id: usize, function_id: usize, a0: usize) -> 
 	}
 }
 
-pub unsafe fn call_sbi_2(extension_id: usize, function_id: usize, a0: usize, a1: usize) -> Result<usize, SBIError> {
+pub unsafe extern "C" fn call_sbi_2(extension_id: usize, function_id: usize, a0: usize, a1: usize) -> Result<usize, SBIError> {
 	let error_code: usize;
 	let return_value: usize;
 	llvm_asm!(r"
@@ -97,7 +97,7 @@ pub unsafe fn call_sbi_2(extension_id: usize, function_id: usize, a0: usize, a1:
 	}
 }
 
-pub unsafe fn call_sbi_3(extension_id: usize, function_id: usize, a0: usize, a1: usize, a2: usize) -> Result<usize, SBIError> {
+pub unsafe extern "C" fn call_sbi_3(extension_id: usize, function_id: usize, a0: usize, a1: usize, a2: usize) -> Result<usize, SBIError> {
 	let error_code: usize;
 	let return_value: usize;
 	llvm_asm!(r"
@@ -137,3 +137,12 @@ pub fn shutdown(reason: usize) {
 	}
 }
 
+/// Safety: Only if start_addr is an address capable of bootstrapping himself
+pub unsafe fn start_hart(hartid: usize, start_addr: usize, opaque: usize) -> Result<(), SBIError> {
+	call_sbi_3(0x48534D, 0, hartid, start_addr, opaque).map(|_| {()})
+}
+
+/// Safety: Only if start_addr is an address capable of bootstrapping himself
+pub fn hart_get_status(hartid: usize) -> Result<usize, SBIError> {
+	unsafe { call_sbi_1(0x48534D, 2, hartid) }
+}

@@ -34,13 +34,16 @@ extern "C" {
 	static _heap_start: c_void;
 	static _heap_end: c_void;
 	
+	static _stack_start: c_void;
+	
 	fn s_trap_vector();
+	fn new_hart();
 }
 
 
 use allocator::{LinkedListAllocator, MutexWrapper};
 
-use crate::plic::Plic0;
+use crate::{cpu::load_hartid, hart::get_hart_meta, plic::Plic0};
 
 
 
@@ -65,6 +68,7 @@ pub mod timeout;
 static mut BOOT_FRAME: trap::TrapFrame = trap::TrapFrame::zeroed();
 
 
+use core::sync::atomic::Ordering;
 
 #[no_mangle]
 pub fn main(hartid: usize, opaque: usize) -> ! {
@@ -72,13 +76,15 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 		panic!("main() called more than once!");
 	}
 	
-	unsafe { crate::drivers::uart::Uart::new(0x1000_0000).setup() };
+	cpu::BOOT_HART.store(hartid, Ordering::Relaxed);
 	
+	unsafe { crate::drivers::uart::Uart::new(0x1000_0000).setup() };
 	
 	
 	// SAFETY: We're the only hart, there's no way the data gets changed by someone else meanwhile
 	unsafe { BOOT_FRAME.hartid = hartid }
 	unsafe { BOOT_FRAME.pid = 1 }
+	unsafe { BOOT_FRAME.interrupt_stack = &_stack_start as *const _ as usize}
 	
 	// SAFETY: BOOT_FRAME has a valid trap frame value so this doesn't break the rest of the kernel
 	unsafe { crate::cpu::write_sscratch(&BOOT_FRAME as *const trap::TrapFrame as usize) }
@@ -87,6 +93,7 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	log::set_logger(&logger::KERNEL_LOGGER).unwrap();
 	log::set_max_level(log::LevelFilter::Trace);
 	
+	info!("Kernel reached, logging set up");
 	
 	// SAFETY: identity_map is valid when the root page is valid, which in this case is true
 	// and paging is disabled now
@@ -97,28 +104,28 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	let heap_start = unsafe {&_heap_start as *const c_void as usize};
 	
 	// SAFETY: This relies on the assumption that heap_end and heap_start are valid addresses (which are provided by the linker script)
-	// If they aren't, then it's pointless
 	unsafe { ALLOCATOR.lock().init(heap_start, heap_end - heap_start) }; 
 	
 	
-	// SAFETY: s_trap_vector is a valid trap vector so no problems
+	// SAFETY: s_trap_vector is a valid trap vector so no problems here
 	unsafe { cpu::write_stvec(s_trap_vector as usize) };
 	
-	/*
 	// Setup paging
 	// SAFETY: If identity mapping did its thing right, then nothing should change
-	unsafe { cpu::write_satp((&mut paging::ROOT_PAGE as *mut paging::Table as usize) >> 12 | cpu::csr::SATP_SV39) }
+	unsafe { cpu::write_satp(
+		(&mut paging::ROOT_PAGE as *mut paging::Table as usize) >> 12 
+		| cpu::csr::SATP_SV39
+		| 100 << 43 ) }
 	
 	
 	cpu::fence_vma();
-	*/
 	
 	
 	// Initialize the device tree assuming that opaque contains a pointer to the DT
 	// (standard behaviour in QEMU)
 	fdt::init(opaque as _);
 	
-	hart::add_boot_hart();
+	unsafe { hart::add_boot_hart() };
 	
 	// Set up the external interrupts
 	let plic = Plic0::new_with_fdt();
@@ -143,15 +150,18 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	process::new_supervisor_process(test_task::test_task_2);
 	process::new_supervisor_process(process::idle_forever_entry_point);
 	
-	
-	println!("{:?}", unsafe { (*cpu::read_sscratch()).pid });
-	
-	fdt::root().pretty(0);
+	// fdt::root().read().pretty(0);
 
 	timer_queue::init();
+	timer_queue::init_hart();
+	
+	unsafe { hart::start_all_harts(new_hart as usize) };
+	
 	
 	scheduler::schedule_next_slice(0);
 	timer_queue::schedule_next();
+	
+	
 	
 	loop {
 		cpu::wfi();
@@ -159,9 +169,23 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 }
 
 
-
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
+	
+    // Disable ALL interrupts
+    unsafe { 
+		cpu::write_sie(0);
+	}
+	
+	if let Some(meta) = get_hart_meta(load_hartid()) {
+		if meta.is_panicking.load(Ordering::Relaxed) {
+			println!("\x1b[31mDouble Panic\x1b[0m");
+			loop {}
+		} else {
+			meta.is_panicking.store(true, Ordering::Relaxed)
+		}
+	}
+	
     //let mut host_stderr = HStderr::new();
     
     // logs "panicked at '$reason', src/main.rs:27:4" to the host stderr
@@ -184,19 +208,13 @@ fn panic(info: &PanicInfo) -> ! {
     } else {
     	print!("\x1b[31mPanic\x1b[0m with unknown context: ")
     }
+    
     if let Some(location) = info.location() {
     	println!("\"{}\" at \x1b[94m{}\x1b[0m", message, location);
     } else {
     	println!("\"{}\" at unknown location", message);
     }
     
-    // Disable ALL interrupts
-    unsafe { 
-		
-		cpu::write_sie(0);
-	}
-    
-
 	// Shutdown immediately
 	sbi::shutdown(0);
 
@@ -222,3 +240,4 @@ pub mod syscall;
 pub mod drivers;
 pub mod sbi;
 pub mod scheduler;
+pub mod file_descriptor;

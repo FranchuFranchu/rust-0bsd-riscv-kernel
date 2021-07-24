@@ -13,6 +13,7 @@ log = "0.4"
 itertools = {version = "0.10", default-features = false}
 cstr_core = "0.2"
 aligned = "0.3"
+kernel_proc_macros = { path = "src/crates/kernel_proc_macros" }
 
 [profile.dev]
 opt-level = 0

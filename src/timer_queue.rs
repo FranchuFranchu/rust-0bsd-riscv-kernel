@@ -1,10 +1,11 @@
-use alloc::collections::BinaryHeap;
+use alloc::collections::{BinaryHeap, BTreeMap};
 use core::{mem::MaybeUninit};
 
 use core::cmp::Reverse;
 
 use spin::RwLock;
 
+use crate::cpu::load_hartid;
 use crate::{sbi, timer_queue};
 
 /// SBI only allows us to have 1 timer set at a time
@@ -41,36 +42,37 @@ impl Ord for TimerEvent {
 	// add code here
 }
 
-// For some reason, BinaryHeap::new() is not a const fn
-// so we have to use unsafe to minimize runtime overhead
-// MaybeUninit is essentially an unsafe Option with no runtime information
-static mut TIMER_QUEUE: MaybeUninit<RwLock<BinaryHeap<TimerEvent>>> = MaybeUninit::uninit();
+pub static TIMER_QUEUE: RwLock<BTreeMap<usize, RwLock<BinaryHeap<TimerEvent>>>> = RwLock::new(BTreeMap::new());
 
 pub fn init() {
-	unsafe { TIMER_QUEUE = MaybeUninit::new(RwLock::new(BinaryHeap::new())) };
+	
+}
+
+/// Does initialization local to this hart
+pub fn init_hart() {
+	TIMER_QUEUE.write().insert(load_hartid(), RwLock::new(BinaryHeap::new()));
 }
 
 // All functions below invoke UB if init() is not called
-pub fn get_timer_queue() -> &'static RwLock<BinaryHeap<TimerEvent>> {
-	unsafe { TIMER_QUEUE.assume_init_ref() }
-}
-
+// (well, not with the current implementation)
 
 // These two functions get called on a timer interrupt
-/// Removes the earliest time event and returns the time (with maybe some metadata in the future?)
+/// Removes the earliest time event and returns the time it happened and its cause
+/// Note that the time it happened might actually be _after_ the current time, in which case this functions shouldn't have been called
 pub fn last_cause() -> TimerEvent {
 	// Remove the lowest element in the heap (which we will assume is the time this call happened)
-	get_timer_queue().write().pop().unwrap()
+	TIMER_QUEUE.read()[&load_hartid()].write().pop().unwrap()
 }
 
 pub fn schedule_next() {
 	// Call SBI to schedule the next timer interrupt
-	let next_time = get_timer_queue().read().peek().expect("Deadlock: Timer queue was drained to zero This should never happen!").instant;
+	let next_time = TIMER_QUEUE.read()[&load_hartid()].read().peek().expect("Deadlock: Timer queue was drained to zero This should never happen!").instant;
 	// Note that the get_timer_queue().read() must be unlocked here
 	// because the timer interrupt might trigger immeditately
+	
 	sbi::set_absolute_timer(next_time).unwrap();
 }
 
 pub fn schedule_at(event: TimerEvent) {
-	get_timer_queue().write().push(event)
+	TIMER_QUEUE.read()[&load_hartid()].write().push(event)
 }

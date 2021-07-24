@@ -7,7 +7,7 @@ pub static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
 #[macro_export]
 macro_rules! print
 {
-	($($args:tt)+) => ({
+	($($args:tt)+) => (#[allow(unused_unsafe)] {
 			// Lock the output to prevent lines mixing between each other
 			let lock = crate::std_macros::OUTPUT_LOCK.lock();
 			use core::fmt::Write;

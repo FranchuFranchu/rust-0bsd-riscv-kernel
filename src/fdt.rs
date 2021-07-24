@@ -1,13 +1,13 @@
 // See https://github.com/devicetree-org/devicetree-specification/releases/tag/v0.3
 
-use core::mem::{MaybeUninit};
+use core::mem::MaybeUninit;
 use itertools::Itertools;
-use alloc::{boxed::Box, collections::{BTreeMap, VecDeque}, format, string::String, sync::Arc, vec::Vec};
+use alloc::{collections::{BTreeMap, VecDeque}, format, string::String};
 use cstr_core::CStr;
 use alloc::borrow::ToOwned;
 use spin::RwLock;
 
-use crate::{alloc::string::ToString, cpu::read_sscratch};
+use crate::alloc::string::ToString;
 
 use num_enum::{FromPrimitive, IntoPrimitive};
 
@@ -123,6 +123,9 @@ impl Node {
 	
 }
 #[derive(Debug)]
+// this makes more sense here
+#[allow(non_camel_case_types)]
+
 pub enum PropertyValue<'data> {
 	Empty,
 	PHandleRaw(u32),
@@ -311,7 +314,6 @@ pub fn build(mut token: *const u32) -> Node {
 				token = unsafe { token.add(1) };
 			},
 			StructureToken::End => {
-				token = unsafe { token.add(1) };
 				break
 			},
 			StructureToken::Unknown => {

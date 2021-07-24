@@ -1,6 +1,6 @@
 // 0BSD
 
-use crate::{cpu, process::{PROCESSES, PROCESS_SCHED_QUEUE}, sbi, timer_queue};
+use crate::{cpu, process::PROCESS_SCHED_QUEUE, timer_queue};
 
 // Return the next PID to be run
 pub fn schedule() -> usize {

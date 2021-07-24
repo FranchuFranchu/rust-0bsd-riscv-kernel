@@ -1,9 +1,9 @@
 use core::{pin::Pin, future::Future};
 use alloc::{boxed::Box, collections::{BTreeMap}, sync::{Arc, Weak}, vec::Vec};
-use spin::{RwLock, RwLockWriteGuard, RwLockReadGuard};
+use spin::{RwLock};
 
 use core::task::{Waker, RawWaker, RawWakerVTable};
-use crate::{context_switch::{self, context_switch}, cpu::{self, load_hartid, read_sscratch}, scheduler::schedule_next_slice, syscall::syscall_exit, trap::TrapFrame};
+use crate::{context_switch, cpu::{self, load_hartid, read_sscratch}, scheduler::schedule_next_slice, trap::TrapFrame};
 use crate::cpu::Registers;
 use aligned::{A16, Aligned};
 
@@ -93,7 +93,6 @@ impl Process {
 		
 		// Switch to the trap frame
 		unsafe { switch_to_supervisor_frame(frame_pointer) };
-		unreachable!();
 	}
 	
 	// These are the waker methods
@@ -277,6 +276,7 @@ pub fn idle_forever_entry_point() {
 
 /// Starts a process that wfi()s once, immediately switches to the process, then exits. 
 /// Must be called from an interrupt context.
+/// TODO this doesn't actually do this
 pub fn idle() -> ! {
 	loop {
 		cpu::wfi();

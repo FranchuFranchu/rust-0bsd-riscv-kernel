@@ -1,9 +1,9 @@
 /// This module uses time interrupts to create a "timeout" future
 
 use alloc::vec::Vec;
-use core::task::{Waker, Context, Poll};
+use core::task::{Waker, Poll};
 use core::future::Future;
-use core::cmp::Ordering;
+
 
 use spin::RwLock;
 
@@ -13,7 +13,7 @@ use crate::{cpu, timer_queue};
 /// TODO use binary heap?
 pub static WAITING_TIMEOUTS: RwLock<Vec<(TimeoutFuture, Waker)>> = RwLock::new(Vec::new());
 
-#[must_use = "Futures do nothing unless polled"]
+//#[must_use = "Futures do nothing unless polled"]
 #[derive(Copy, Clone)]
 pub struct TimeoutFuture {
 	pub for_time: u64,
@@ -71,6 +71,10 @@ pub fn on_timer_event(instant: u64) {
         }
     }
     for i in 0..max_remove_index {
-        lock.remove(i);
+        // This would trigger a unused-future warning otherwise
+        // because rustc isn't smart enough to realize that all futures before max_remove_index would have been woken up before being removed
+        #[allow(unused_must_use)] {
+            lock.remove(i)
+        };
     }
 }

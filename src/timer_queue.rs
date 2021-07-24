@@ -1,12 +1,12 @@
 use alloc::collections::{BinaryHeap, BTreeMap};
-use core::{mem::MaybeUninit};
 
-use core::cmp::Reverse;
+
+
 
 use spin::RwLock;
 
 use crate::cpu::load_hartid;
-use crate::{sbi, timer_queue};
+use crate::{sbi};
 
 /// SBI only allows us to have 1 timer set at a time
 /// So instead we have to keep track of all points in time we want to get interrupted on

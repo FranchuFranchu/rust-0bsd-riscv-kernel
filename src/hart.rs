@@ -5,7 +5,7 @@ use core::{pin::Pin, sync::atomic::AtomicBool};
 use spin::RwLock;
 use aligned::{A16, Aligned};
 
-use crate::{context_switch::{self, context_switch}, cpu::{self, load_hartid}, hart, plic::{Plic0}, process::{self, TASK_STACK_SIZE}, s_trap_vector, sbi, scheduler::schedule_next_slice, timer_queue::{self, TIMER_QUEUE}, trap::TrapFrame};
+use crate::{cpu::{self, load_hartid}, plic::Plic0, process::{self, TASK_STACK_SIZE}, s_trap_vector, sbi, scheduler::schedule_next_slice, timer_queue, trap::TrapFrame};
 
 
 // Data associated with a hart
@@ -34,7 +34,7 @@ pub unsafe fn add_boot_hart() {
 }
 
 
-// To be run from a recently created hart
+/// Must be run from a recently created hart
 pub fn add_this_secondary_hart(hartid: usize, interrupt_sp: usize) {
 	// Create the trap frame
 	let mut trap_frame = Pin::new(Box::new(TrapFrame::zeroed()));
@@ -73,7 +73,7 @@ pub unsafe fn start_all_harts(start_addr: usize) {
 					// This hart is stopped
 					// Create a stack for it and pass it in a1
 					let process_stack = alloc::vec![0; 4096*2].into_boxed_slice();
-					sbi::start_hart(hartid, start_addr, process_stack.as_ptr() as usize + (4096*2)-0x10);
+					sbi::start_hart(hartid, start_addr, process_stack.as_ptr() as usize + (4096*2)-0x10).expect("Starting hart failed!");
 					Box::leak(process_stack);
 				}
 			}
@@ -83,7 +83,7 @@ pub unsafe fn start_all_harts(start_addr: usize) {
 
 #[no_mangle]
 fn hart_entry(hartid: usize, interrupt_stack: usize) -> ! {
-	unsafe { add_this_secondary_hart(hartid, interrupt_stack) };
+	add_this_secondary_hart(hartid, interrupt_stack);
 	
 	
 	

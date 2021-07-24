@@ -40,7 +40,7 @@ impl SBIError {
     }
 }
 
-pub unsafe extern "C" fn call_sbi_0(extension_id: usize, function_id: usize) -> Result<usize, SBIError> {
+pub unsafe fn call_sbi_0(extension_id: usize, function_id: usize) -> Result<usize, SBIError> {
 	let error_code: usize;
 	let return_value: usize;
 	llvm_asm!(r"
@@ -58,7 +58,7 @@ pub unsafe extern "C" fn call_sbi_0(extension_id: usize, function_id: usize) -> 
 	}
 }
 
-pub unsafe extern "C" fn call_sbi_1(extension_id: usize, function_id: usize, a0: usize) -> Result<usize, SBIError> {
+pub unsafe fn call_sbi_1(extension_id: usize, function_id: usize, a0: usize) -> Result<usize, SBIError> {
 	let error_code: usize;
 	let return_value: usize;
 	llvm_asm!(r"
@@ -77,7 +77,7 @@ pub unsafe extern "C" fn call_sbi_1(extension_id: usize, function_id: usize, a0:
 	}
 }
 
-pub unsafe extern "C" fn call_sbi_2(extension_id: usize, function_id: usize, a0: usize, a1: usize) -> Result<usize, SBIError> {
+pub unsafe fn call_sbi_2(extension_id: usize, function_id: usize, a0: usize, a1: usize) -> Result<usize, SBIError> {
 	let error_code: usize;
 	let return_value: usize;
 	llvm_asm!(r"
@@ -97,7 +97,7 @@ pub unsafe extern "C" fn call_sbi_2(extension_id: usize, function_id: usize, a0:
 	}
 }
 
-pub unsafe extern "C" fn call_sbi_3(extension_id: usize, function_id: usize, a0: usize, a1: usize, a2: usize) -> Result<usize, SBIError> {
+pub unsafe fn call_sbi_3(extension_id: usize, function_id: usize, a0: usize, a1: usize, a2: usize) -> Result<usize, SBIError> {
 	let error_code: usize;
 	let return_value: usize;
 	llvm_asm!(r"

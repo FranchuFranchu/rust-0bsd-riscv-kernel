@@ -1,6 +1,6 @@
 use alloc::sync::Arc;
 
-use crate::{cpu::{self, read_sscratch}, process::{self, ProcessState}, sbi, scheduler};
+use crate::{cpu, process::{self, ProcessState}, scheduler};
 
 
 

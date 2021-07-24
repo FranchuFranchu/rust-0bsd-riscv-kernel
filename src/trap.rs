@@ -1,6 +1,6 @@
-use alloc::sync::Arc;
 
-use crate::{context_switch, cpu::{self, BOOT_HART, load_hartid, read_sp}, drivers::uart, hart::get_this_hart_meta, process::try_get_process, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
+
+use crate::{context_switch, cpu::{self, load_hartid}, drivers::uart, hart::get_this_hart_meta, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
 
 /// A pointer to this struct is placed in sscratch
 #[derive(Default, Debug, Clone)] // No copy because they really shouldn't be copied and used without changing the PID

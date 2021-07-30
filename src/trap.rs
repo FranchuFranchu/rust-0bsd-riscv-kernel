@@ -118,7 +118,7 @@ pub extern "C" fn trap_handler(
 			}
 		}
 	}
-	info!("\x1b[1;36m^ EXIT TRAP {}\x1b[0m", load_hartid());
+	debug!("\x1b[1;36m^ EXIT TRAP {}\x1b[0m", load_hartid());
 
 	return epc;
 }

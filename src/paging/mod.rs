@@ -82,8 +82,8 @@ pub static mut PAGE_TABLE_TABLE: Table = Table::zeroed();
 pub static mut ROOT_PAGE: Table = Table::zeroed();
 
 
-const ENTRY_COUNT: usize = 512;
-const PAGE_ALIGN: usize = 4096;
-const MEGAPAGE_SIZE: usize = PAGE_ALIGN * ENTRY_COUNT;
-const GIGAPAGE_SIZE: usize = PAGE_ALIGN * ENTRY_COUNT * ENTRY_COUNT;
-const TERAPAGE_SIZE: usize = PAGE_ALIGN * ENTRY_COUNT * ENTRY_COUNT * ENTRY_COUNT;
+pub const ENTRY_COUNT: usize = 512;
+pub const PAGE_ALIGN: usize = 4096;
+pub const MEGAPAGE_SIZE: usize = PAGE_ALIGN * ENTRY_COUNT;
+pub const GIGAPAGE_SIZE: usize = PAGE_ALIGN * ENTRY_COUNT * ENTRY_COUNT;
+pub const TERAPAGE_SIZE: usize = PAGE_ALIGN * ENTRY_COUNT * ENTRY_COUNT * ENTRY_COUNT;

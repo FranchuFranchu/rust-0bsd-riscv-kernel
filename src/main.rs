@@ -2,6 +2,7 @@
 	asm,
 	naked_functions,
 	const_trait_impl,
+	const_fn_trait_bound,
 	default_alloc_error_handler,
 	const_mut_refs,
 	panic_info_message,
@@ -9,6 +10,9 @@
 	option_result_unwrap_unchecked,	
 	unchecked_math,
 	const_btree_new,
+	unsized_fn_params,
+	box_into_inner,
+	unsized_locals,
 	global_asm)]
 #![cfg_attr(not(test), no_std)]
 #![no_main]
@@ -18,6 +22,7 @@
 
 
 use core::panic::PanicInfo;
+use crate::drivers::virtio::{block::VirtioBlockDevice, VirtioDeviceType};
 
 #[macro_use]
 extern crate log;
@@ -43,7 +48,7 @@ extern "C" {
 
 use allocator::{LinkedListAllocator, MutexWrapper};
 
-use crate::{cpu::load_hartid, hart::get_hart_meta, plic::Plic0};
+use crate::{cpu::load_hartid, drivers::virtio, hart::get_hart_meta, plic::Plic0};
 
 
 
@@ -125,6 +130,10 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	// (standard behaviour in QEMU)
 	fdt::init(opaque as _);
 	
+	//fdt::root().read().pretty(0);
+	
+	//loop {};
+	
 	unsafe { hart::add_boot_hart() };
 	
 	// Set up the external interrupts
@@ -149,6 +158,19 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	process::new_supervisor_process(test_task::test_task);
 	process::new_supervisor_process(test_task::test_task_2);
 	process::new_supervisor_process(process::idle_forever_entry_point);
+	
+	// Create the virtio device
+	
+	let mut virtio = unsafe { drivers::virtio::VirtioDevice::new(0x10008000 as _) };
+	
+	virtio.configure();
+	
+	VirtioBlockDevice::negotiate_features(&mut virtio);
+	VirtioBlockDevice::configure(virtio);
+	
+	
+	
+	loop {};
 	
 	// fdt::root().read().pretty(0);
 

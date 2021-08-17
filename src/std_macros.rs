@@ -9,7 +9,6 @@ macro_rules! print
 {
 	($($args:tt)+) => (#[allow(unused_unsafe)] {
 			// Lock the output to prevent lines mixing between each other
-			let lock = crate::std_macros::OUTPUT_LOCK.lock();
 			use core::fmt::Write;
 			let _ = write!(unsafe {crate::drivers::uart::Uart::new(0x1000_0000)}, $($args)+);
 			});

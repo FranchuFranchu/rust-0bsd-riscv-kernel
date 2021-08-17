@@ -2,16 +2,27 @@
 
 pub mod block;
 
-use core::slice;
-use core::alloc::Layout;
+use core::{
+	slice,
+	alloc::Layout,
+	future::Future,
+	convert::TryInto,
+	task::Waker,
+};
 
-use alloc::collections::BTreeMap;
+use alloc::{
+	collections::BTreeMap,
+	vec::Vec,
+	boxed::Box,
+	sync::Arc,
+};
 
+use itertools::Itertools;
 use volatile_register::{RW, RO, WO};
-
-use alloc::boxed::Box;
-
+use spin::Mutex;
 use crate::paging::PAGE_ALIGN;
+
+use self::block::VirtioBlockDevice;
 
 // from xv6
 pub enum StatusField {
@@ -23,6 +34,7 @@ pub enum StatusField {
 	DeviceNeedsReset = 64,
 }
 
+#[derive(Debug)]
 #[repr(C)]
 pub struct VirtqueueDescriptor {
 	/// Physical address
@@ -91,12 +103,20 @@ pub struct VirtioMmio {
 	// 
 }
 
+#[derive(Debug)]
 pub struct VirtioDevice {
 	// Pointer to the configuration
 	configuration: *mut VirtioMmio,
+	queue_used_sizes_align: BTreeMap<u16, (u16, u16, u32)>,
+	waiting_wakers: Vec<Waker>,
+	changed_queue: Option<u16>,
 }
 
+// SAFETY: the only reason raw pointers arent thread safe is backwards compatibility
+unsafe impl Send for VirtioDevice {}
+
 /// A useful handle over a dynamically-sized pointer
+#[derive(Debug)]
 pub struct SplitVirtqueue {
 	// See section 2.6 of https://docs.oasis-open.org/virtio/virtio/v1.1/cs01/virtio-v1.1-cs01.html#x1-230005
 	
@@ -109,9 +129,61 @@ pub struct SplitVirtqueue {
 	pointer: *mut u8,
 	size: u16,
 	first_free_descriptor: u16,
+	guest_used_ring_idx: u16,
+}
+unsafe impl Send for SplitVirtqueue {}
+
+/// This struct iterates over each
+/// of the descriptor data
+#[derive(Copy, Clone)]
+pub struct SplitVirtqueueDescriptorChainIterator<'a> {
+	queue: &'a SplitVirtqueue,
+	pointed_chain: Option<u16>,
+}
+
+impl <'a> SplitVirtqueueDescriptorChainIterator<'a> {
+	fn fold_to_vec(&mut self) -> Vec<u8> {
+		self.map(|s| {
+			let mut v = Vec::new();
+			v.extend_from_slice(s);
+			v
+		}).concat()
+	}
+}
+
+impl <'a> Iterator for SplitVirtqueueDescriptorChainIterator<'a> {
+	type Item = &'a [u8];
+	
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.pointed_chain == None {
+			return None
+		}
+		
+		let descriptor = self.queue.get_descriptor(self.pointed_chain.unwrap());
+		if descriptor.address == 0 {
+			return None
+		}
+		if descriptor.flags & 1 == 0 {
+			self.pointed_chain = None
+		} else {
+			self.pointed_chain = Some(descriptor.next)
+		}
+		
+		// TODO fix the other parts of this module so that this is sound?
+		let s = unsafe { slice::from_raw_parts_mut(descriptor.address as *mut u8, descriptor.length as usize) };
+		Some(s)
+	}
+
+}
+
+#[repr(C)]
+pub struct SplitVirtqueueUsedRing {
+	idx: u32,
+	len: u32,
 }
 
 impl SplitVirtqueue {
+	
 	#[inline]
 	fn descriptor_table_size(size: &u16) -> usize {
 		16 * *size as usize
@@ -149,7 +221,7 @@ impl SplitVirtqueue {
 		Self::used_ring_offset(&size) + Self::align(Self::used_ring_size(&size))
 	}
 	fn new(size: u16) -> SplitVirtqueue {
-		use crate::ALLOCATOR;
+		use crate::allocator::ALLOCATOR;
 		use core::alloc::GlobalAlloc;
 		
 		// Allocate page-aligned memory
@@ -167,6 +239,7 @@ impl SplitVirtqueue {
 			pointer: pointer as _,
 			size,
 			first_free_descriptor: 0,
+			guest_used_ring_idx: 0,
 		}
 	}
 	
@@ -263,6 +336,21 @@ impl SplitVirtqueue {
 		}
 	}
 	
+	pub fn get_device_used_ring_idx(&mut self) -> u16 {
+		unsafe {
+			use core::ops::Add;
+			*((self.pointer.add(Self::used_ring_offset(&self.size)) as *mut u16).add(1))
+		}
+	}
+	
+	pub fn get_used_ring_ptr(&mut self, index: u16) -> *mut SplitVirtqueueUsedRing {
+		unsafe {
+			use core::ops::Add;
+			((self.pointer.add(Self::used_ring_offset(&self.size)) as *mut u16).add(2) as *mut SplitVirtqueueUsedRing).add(index as usize)
+		}
+	}
+	
+	
 	/// Adds a descriptor to the available ring
 	/// making it available to the device
 	pub fn make_available(&mut self, descriptor: u16) {
@@ -272,11 +360,44 @@ impl SplitVirtqueue {
 		self.add_available_ring_idx();
 	}
 	
+	pub fn pop_used_element(&mut self) -> Option<*mut SplitVirtqueueUsedRing> {
+		if self.guest_used_ring_idx + 1 != self.get_device_used_ring_idx() {
+			return None;
+		}
+		let v = self.get_used_ring_ptr(self.guest_used_ring_idx);
+		self.guest_used_ring_idx = self.guest_used_ring_idx.wrapping_add(1);
+		Some(v)
+	}
+	
+	pub fn pop_used_element_to_iterator<'this>(&'this mut self) -> SplitVirtqueueDescriptorChainIterator<'this> {
+		let u = self.pop_used_element().unwrap();
+		SplitVirtqueueDescriptorChainIterator { queue: self, pointed_chain: Some(unsafe { (*u).idx } as u16) }
+	}
+	
 	/// Returns the "Guest physical page number of the virtual queue"
 	/// this is pointer / PAGE_SIZE in our case
 	fn pfn(&self) -> usize {
 		(self.pointer as usize) / (PAGE_ALIGN)
 	}
+	
+}
+
+
+use core::task::Poll;
+impl Future for VirtioDevice {
+	type Output = u16;
+
+	fn poll(mut self: core::pin::Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
+        if let Some(id) = self.next_changed_used_ring_queue()  {
+        	Poll::Ready(id)
+        } else if let Some(id) = self.changed_queue {
+        	self.changed_queue = None;
+        	Poll::Ready(id)
+        } else {
+        	self.waiting_wakers.push(cx.waker().clone());
+        	Poll::Pending
+        }
+    }
 }
 
 impl Drop for SplitVirtqueue {
@@ -289,6 +410,9 @@ impl VirtioDevice {
 	pub unsafe fn new(base: *mut VirtioMmio) -> Self {
 		Self {
 			configuration: base,
+			queue_used_sizes_align: BTreeMap::new(),
+			changed_queue: None,
+			waiting_wakers: Vec::new()
 		}
 	}
 	pub fn configure(&mut self) {
@@ -301,6 +425,16 @@ impl VirtioDevice {
 			
 		}
 	}
+	
+	pub fn get_virtqueue_address_size(&self, queue: u16) -> Option<(*const (), u16)> {
+		let (_, size, align) = self.queue_used_sizes_align.get(&queue)?;
+		let address: usize = unsafe  {
+			(*self.configuration).queue_sel.write(queue.into());
+			((*self.configuration).queue_pfn.read()) * align
+		}.try_into().unwrap();
+		Some((address as _, *size))
+	}
+	
 	pub fn configure_queue(&mut self, queue: u16) -> SplitVirtqueue {
 		let virtq;
 		unsafe { 
@@ -322,6 +456,8 @@ impl VirtioDevice {
 			let align = crate::paging::PAGE_ALIGN; // 4096 in RISC-V
 			
 			virtq = SplitVirtqueue::new(virtqueue_size);
+			
+			self.queue_used_sizes_align.insert(queue, (0, virtqueue_size, align.try_into().unwrap()));
 			
 			// Notify the device about the queue size by writing the size to QueueNum. 
 			(*self.configuration).queue_num.write(virtqueue_size as u32);
@@ -351,12 +487,33 @@ impl VirtioDevice {
 		}
 	}
 	
+	pub fn is_present(&mut self) -> bool {
+		unsafe { (*self.configuration).device_id.read() != 0 }
+	}
+	
 	pub fn queue_ready(&mut self, queue: u16) {
 		unsafe {
 			(*self.configuration).queue_notify.write(queue.into());
 		}
-		
 	}
+	
+	
+	/// moves self into a driver
+	pub fn make_driver(this: Arc<Mutex<Self>>) -> Option<Arc<Mutex<dyn VirtioDeviceType + Send + Sync>>> {
+		let id = unsafe { (*this.lock().configuration).device_id.read() };
+		match id {
+		    2 => { // Block device 
+		    	VirtioBlockDevice::negotiate_features(&mut this.lock());
+		    	let dev = VirtioBlockDevice::configure(this.clone()).unwrap();
+		    	Some(dev)
+		    },
+		    _ => {
+		    	warn!("Unknown/Unimplemented VirtIO device type: {}", unsafe { (*this.lock().configuration).device_id.read() });
+		    	None
+		    }
+		}
+	}
+	
 	pub fn get_device_features(&mut self) -> u32 {
 		unsafe { (*self.configuration).host_features.read() }
 	}
@@ -366,16 +523,90 @@ impl VirtioDevice {
 	pub fn driver_ok(&mut self) {
 		unsafe { (*self.configuration).status.write((*self.configuration).status.read() | StatusField::DriverOk as u32) };
 	}
-} 
+	
+	/// Should be called on an interrupt. This may wake up some used buffer wakers
+	/// The reason this takes a mutex to self is to allow the waker to lock the VirtioDevice
+	/// without deadlocking
+	pub fn on_interrupt(this: &Mutex<Self>) {
+		let interrupt_cause = unsafe { (*this.lock().configuration).interrupt_status.read() };
+		if (interrupt_cause & (1 << 0)) != 0 {
+			// Used Buffer Notification
+			// Wake up all relevant wakers
+			while let Some(queue_id) = {
+				// This is done to make sure this is unlocked at the start of each iteration of the loop
+				let b = this.lock().next_changed_used_ring_queue();
+				b
+			} {
+				// First we create a list of wakers with the VirtioDevice locked
+				let wakers;
+				{
+					let mut this = this.lock();
+					this.changed_queue = Some(queue_id);
+					wakers = this.waiting_wakers.clone();
+				}
+				
+				
+				// Then we wake all of them with the VirtioDevice unlocked
+				for i in wakers {
+					i.wake_by_ref()
+				}
+			}
+		}
+		// TODO this won't work well if more than one waker is waiting on the device!
+		// this.lock().changed_queue = None;
+		
+		
+		
+		
+		unsafe { (*this.lock().configuration).interrupt_ack.write(interrupt_cause) };
+	}
+	
+	
+	/// Gets a virtual queue number whose used ring has changed since the last time it was returned from this function
+	pub fn next_changed_used_ring_queue(&mut self) -> Option<u16> {
+		// Iterate over all virtqueues, then when we
+		// find one where the driver used ring index we stored
+		// and the device used index are different, we return a
+		// tuple from the block with the label_break_value feature
+		
+		// this is to prevent aliasing violations when we modify the current 
+		// driver used ring index from inside the loop
+		if let Some((index, change_used_index_to)) = 'block: {
+			for (idx, (driver_used_ring_index, size, align)) in self.queue_used_sizes_align.iter(){
+				let addr = self.get_virtqueue_address_size(*idx).unwrap().0;
+				let device_used_index = unsafe { ((addr as *const u8).add(SplitVirtqueue::used_ring_offset(size)) as *mut u16).add(1).read() };
+				if device_used_index != *driver_used_ring_index {
+					// This means the device has added an entry to the used ring!
+					// TODO check for overflow?
+					break 'block Some((*idx, device_used_index))
+				}
+			}
+			None
+		} {
+			self.queue_used_sizes_align.get_mut(&index)?.0 = change_used_index_to;
+			Some(index)
+		} else {
+			// No device changed
+			None
+		}
+	}
+}
 
 pub trait VirtioDeviceType {
-	fn configure(device: VirtioDevice) -> Result<(), ()> ;
+	fn configure(device: Arc<Mutex<VirtioDevice>>) -> Result<Arc<Mutex<Self>>, ()> where Self: Sized;
 	
 	/// Negotiate the accepted features with the device
 	/// By default, this rejects all features
-	fn negotiate_features(device: &mut VirtioDevice) {
+	fn negotiate_features(device: &mut VirtioDevice) where Self: Sized {
 		device.get_device_features(); // ignore their features
 		device.set_driver_features(0);
 		device.accept_features(); // We don't care if our features aren't accepted
 	}
+	
+	fn on_used_queue_ready(&self, queue: u16) {
+		
+	}
+	
+	// Called directly by the interrupt handler outside of the VirtIO modulse
+	fn on_interrupt(&self);
 }

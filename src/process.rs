@@ -3,7 +3,7 @@ use alloc::{boxed::Box, collections::{BTreeMap}, sync::{Arc, Weak}, vec::Vec};
 use spin::{RwLock};
 
 use core::task::{Waker, RawWaker, RawWakerVTable};
-use crate::{context_switch, cpu::{self, load_hartid, read_sscratch}, scheduler::schedule_next_slice, trap::TrapFrame};
+use crate::{context_switch, cpu::{self, load_hartid, read_sscratch, write_sscratch}, hart::get_this_hart_meta, scheduler::schedule_next_slice, trap::{self, TrapFrame}};
 use crate::cpu::Registers;
 use aligned::{A16, Aligned};
 
@@ -88,8 +88,9 @@ impl Process {
 		
 		debug!("Switch to frame at \x1b[32m{:?}\x1b[0m (PC {:x})", frame_pointer, unsafe {(*frame_pointer).pc});
 		
-		
 		self.state = ProcessState::Running;
+		
+		crate::trap::clear_interrupt_context();
 		
 		// Switch to the trap frame
 		unsafe { switch_to_supervisor_frame(frame_pointer) };
@@ -121,6 +122,7 @@ impl Process {
 	}
 	
 	/// This creates a Waker that makes this process a Pending process when woken
+	/// The Pending process will be eventually scheduled
 	pub fn construct_waker(&self) -> Waker {
 		// Create a weak pointer to a RwLock<Self> and then erase its type
 		let raw_pointer = Box::into_raw(Box::new(weak_get_process(&self.trap_frame.pid))) as *const ();
@@ -144,6 +146,7 @@ impl Process {
 		
 		return poll_result
 	}
+	
 	pub fn this() -> Arc<RwLock<Process>> {
 		unsafe { try_get_process(&cpu::read_sscratch().as_ref().expect("Not running on a process!").pid) }
 	}
@@ -182,10 +185,13 @@ pub fn allocate_pid() -> usize {
 pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
 	let pid = allocate_pid();
 	
+	let trapframe_box = Box::new(TrapFrame::zeroed());
+	let trapframe_box = Pin::new(trapframe_box);
+	
 	let mut process = Process {
 		is_supervisor: true,
 		file_descriptors: BTreeMap::new(),
-		trap_frame: Pin::new(Box::new(TrapFrame::zeroed())),
+		trap_frame: trapframe_box,
 		state: ProcessState::Pending,
 		kernel_allocated_stack: None,
 	};
@@ -198,7 +204,7 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
 	
 	process.trap_frame.pc = function;
 	process.trap_frame.pid = pid;
-	process.trap_frame.hartid = usize::MAX;
+	process.trap_frame.hartid = 0xBADC0DE;
 	
 	// Create a small stack for this process
 	let process_stack = alloc::vec![0; TASK_STACK_SIZE].into_boxed_slice();
@@ -218,19 +224,18 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
 	
 	PROCESSES.write().insert(pid, process);
 	
-	debug!("{:?}", PROCESSES.read());
-	
 	pid
 }
 
 #[no_mangle]
 pub extern "C" fn process_return_address_supervisor() {
+	unsafe { crate::asm::do_supervisor_syscall_0(1) };
 	debug!("{:?}", "Process return address");
 	// Run a syscall that deletes the process
 	unsafe {
 		llvm_asm!(r"
 			li a7, 1
-			# Trigger a timer interrupt
+			# Trigger a software interrupt
 			csrr t0, sip
 			# Set SSIP
 			ori t0, t0, 2
@@ -249,7 +254,14 @@ pub fn new_supervisor_process_argument(function: fn(usize), a0: usize) -> usize 
 
 
 pub fn delete_process(pid: usize) {
-	debug!("Remove {:?}", pid);
+	// If our trap frame is the same one as the process's trap frame,
+	// change sscratch to use the boot trap frame
+	// (since the current sscratch is held by PROCESSES and will deallocated)
+	if read_sscratch() as *const TrapFrame == &*try_get_process(&pid).read().trap_frame as *const TrapFrame {
+		warn!("resetting trap frame");
+		unsafe { write_sscratch(&*get_this_hart_meta().unwrap().boot_frame as *const TrapFrame as usize) }
+	}
+	
 	PROCESSES.write().remove(&pid);
 }
 
@@ -264,7 +276,7 @@ pub fn try_get_process(pid: &usize) -> Arc<RwLock<Process>>  {
 	PROCESSES.read().get(pid).unwrap().clone()
 }
 
-fn idle_entry_point() {
+pub fn idle_entry_point() {
 	cpu::wfi();
 }
 
@@ -276,11 +288,8 @@ pub fn idle_forever_entry_point() {
 
 /// Starts a process that wfi()s once, immediately switches to the process, then exits. 
 /// Must be called from an interrupt context.
-/// TODO this doesn't actually do this
 pub fn idle() -> ! {
-	loop {
-		cpu::wfi();
-	}
 	let pid = new_supervisor_process(idle_entry_point);
+	schedule_next_slice(1);
 	context_switch::context_switch(&pid)
 }

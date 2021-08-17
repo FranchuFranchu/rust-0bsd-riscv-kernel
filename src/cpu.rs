@@ -36,6 +36,7 @@ pub enum Registers {
 	T6
 }
 
+
 impl Registers {
 	pub const fn idx(&self) -> usize {
 		*self as usize

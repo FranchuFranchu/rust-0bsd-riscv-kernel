@@ -1,6 +1,4 @@
-
-
-use crate::{context_switch, cpu::{self, load_hartid}, drivers::uart, hart::get_this_hart_meta, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
+use crate::{context_switch, cpu::{self, load_hartid, read_sscratch}, drivers::uart, external_interrupt, hart::get_this_hart_meta, interrupt_context_waker, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
 
 /// A pointer to this struct is placed in sscratch
 #[derive(Default, Debug, Clone)] // No copy because they really shouldn't be copied and used without changing the PID
@@ -12,11 +10,19 @@ pub struct TrapFrame {
 	pub pid: usize, // 34
 	/// This may be shared between different processes executing the same hart
 	pub interrupt_stack: usize,
+	pub flags: usize,
 }
 
 impl TrapFrame {
 	pub const fn zeroed() -> Self {
-		Self { general_registers: [0; 32], hartid: 0, pid: 0, pc: 0, interrupt_stack: 0}
+		Self { general_registers: [0; 32], hartid: 0, pid: 0, pc: 0, interrupt_stack: 0, flags: 0}
+	}
+	// Inherit hartid, interrupt_stack, and flags from the other trap frame
+	pub fn inherit_from(&mut self, other: &TrapFrame) -> &mut TrapFrame {
+		self.hartid = other.hartid;
+		self.interrupt_stack = other.interrupt_stack;
+		self.flags = other.flags;
+		self
 	}
 	pub fn print(&self) {
 		println!("{:?}", "trap");
@@ -27,14 +33,36 @@ impl TrapFrame {
 			}
 		}
 	}
+	pub fn is_interrupt_context(&self) -> bool {
+		self.flags & 1 != 0
+	}
 }
 
 impl Drop for TrapFrame {
 	fn drop(&mut self) {
 		warn!("Trap frame for pid {} dropped", self.pid);
+		if self as *const Self == read_sscratch() {
+			warn!("sscratch contains a dropped trap frame! Use-after-free is likely to happen");
+		}
 	}
 }
 
+#[inline]
+pub fn in_interrupt_context() -> bool {
+	// TODO make this sound (aliasing rules?)
+	unsafe { read_sscratch().as_ref().unwrap().is_interrupt_context() }
+}
+
+#[inline]
+pub(crate) fn set_interrupt_context() {
+	unsafe { (*read_sscratch()).flags |= 1 }
+}
+
+
+#[inline]
+pub(crate) fn clear_interrupt_context() {
+	unsafe { (*read_sscratch()).flags &= !1 }
+}
 
 #[no_mangle]
 pub extern "C" fn trap_handler(
@@ -45,12 +73,14 @@ pub extern "C" fn trap_handler(
 	sstatus: usize,
 	frame: *mut TrapFrame,
 ) -> usize {
+	set_interrupt_context();
 	let is_interrupt = (cause & (usize::MAX / 2 + 1)) != 0;
 	let cause = cause & 0xFFF;
 	debug!("Trap from PID {:x}", unsafe { (*frame).pid });
 	debug!("\x1b[1;35mV ENTER TRAP\x1b[0m");
 	
 	
+	interrupt_context_waker::wake_all();
 	if is_interrupt {
 		match cause {
 			// See table 3.6 of the Privileged specification
@@ -96,11 +126,16 @@ pub extern "C" fn trap_handler(
 			}
 			// Supervisor external interrupt
 			9 => {
+				info!("Extenral interrupt");
 				// Assume it's because of the PLIC0
 				let meta = get_this_hart_meta().unwrap();
 				let interrupt_id = meta.plic.claim_highest_priority();
+				
+				external_interrupt::external_interrupt(interrupt_id);
+				
 				meta.plic.complete(interrupt_id);
-				unsafe { uart::Uart::new(0x10000000) }.get().unwrap();
+				
+				println!("{:?}", "end");
 			}
 			_ => {
 				debug!("Unknown interrupt {}", cause);
@@ -113,12 +148,15 @@ pub extern "C" fn trap_handler(
 				loop {};
 			},
 			_ => {
-				debug!("Error with cause: {:?} *pc: {}", cause, unsafe { *((*frame).pc as *const u32)});
+				info!("Error with cause: {:?} pc: {:X} *pc: {:X}", cause, unsafe { (*frame).pc }, unsafe { *((*frame).pc as *const u32)});
 				loop {} //panic!("Non-interrupt trap");
 			}
 		}
 	}
+	interrupt_context_waker::wake_all();
+	
+	
 	debug!("\x1b[1;36m^ EXIT TRAP {}\x1b[0m", load_hartid());
-
+	clear_interrupt_context();
 	return epc;
 }

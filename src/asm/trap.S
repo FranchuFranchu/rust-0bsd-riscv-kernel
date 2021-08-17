@@ -149,6 +149,8 @@ switch_to_supervisor_frame:
 	ld t0, XLEN*32(a0)
 	csrw sepc, t0
 	restore_volatile_registers
+.global switch_to_supervisor_frame_end
+switch_to_supervisor_frame_end:
 	sret
 
 

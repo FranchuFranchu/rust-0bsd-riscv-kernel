@@ -2,7 +2,7 @@
 
 use alloc::{collections::BTreeMap, sync::Arc, boxed::{Box}};
 use core::{pin::Pin, sync::atomic::AtomicBool};
-use spin::RwLock;
+use spin::{RwLock, Mutex};
 use aligned::{A16, Aligned};
 
 use crate::{cpu::{self, load_hartid}, plic::Plic0, process::{self, TASK_STACK_SIZE}, s_trap_vector, sbi, scheduler::schedule_next_slice, timer_queue, trap::TrapFrame};
@@ -24,13 +24,15 @@ pub fn get_hart_meta(hartid: usize) -> Option<Arc<HartMeta>> {
 
 // Only run this from the boot hart
 /// SAFETY: When sscratch contains a valid trap frame
-pub unsafe fn add_boot_hart() {
-	HART_META.write().insert(load_hartid(), Arc::new(HartMeta { 
+pub unsafe fn add_boot_hart(trap_frame: TrapFrame) {
+	let meta = HartMeta { 
 		plic: Plic0::new_with_fdt(), 
 		boot_stack: None,
-		boot_frame: Pin::new(Box::from_raw(cpu::read_sscratch())),
+		boot_frame: Pin::new(Box::new(trap_frame)),
 		is_panicking: AtomicBool::new(false)
-	}));
+	};
+	HART_META.write().insert(load_hartid(), Arc::new(meta));
+	println!("{:?}", "test");
 }
 
 

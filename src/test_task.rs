@@ -1,3 +1,6 @@
+//! The functions here are tasks that can be run to make sure that complex kernel tasks
+//! won't crash 
+
 use core::ops::{BitAnd, BitXor};
 use core::task::Context;
 use core::pin::Pin;
@@ -42,7 +45,7 @@ pub fn test_task() {
 }
 
 pub fn test_task_2() {
-	// Allocating tons of memory
+	// Allocate tons of memory
 	let twisted_value = 0;
 	let mut vector_vec = Vec::with_capacity(10);
 	for i in 0..70 {	

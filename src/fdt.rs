@@ -1,6 +1,7 @@
 // See https://github.com/devicetree-org/devicetree-specification/releases/tag/v0.3
 
 use core::mem::MaybeUninit;
+use core::any::Any;
 use itertools::Itertools;
 use alloc::{collections::{BTreeMap, VecDeque}, format, string::String};
 use cstr_core::CStr;
@@ -21,6 +22,10 @@ pub struct Node {
 	pub unit_address: Option<usize>,
 	pub children: BTreeMap<&'static str, BTreeMap<Option<usize>, Node>>,
 	pub properties: BTreeMap<&'static str, PropertyValue<'static>>,
+	
+	/// This holds an arbitrary datatype which is the representation of this type in the kernel
+	/// This can (and is) used to own objects with functions that are called on interrupts
+	pub kernel_struct: RwLock<Option<alloc::boxed::Box<dyn Any>>>,
 }
 impl Node {
 	pub fn new(token_name: &'static str) -> Self {
@@ -30,6 +35,7 @@ impl Node {
 			unit_address: name_iter.next().map(|s| usize::from_str_radix(s, 16).unwrap_or(0)),
 			children: BTreeMap::new(),
 			properties: BTreeMap::new(),
+			kernel_struct: RwLock::new(None),
 		}
 	}
 	pub fn get<'this>(&'this self, path: &'this str) -> Option<&'this Node> {
@@ -112,6 +118,14 @@ impl Node {
 			i.walk(closure);
 		};
 	}
+	
+	pub fn walk_nonstatic<F: FnMut(&Node)>(&self, closure: &mut F ) {
+		closure(self);
+		for i in self.children() {
+			i.walk_nonstatic(closure);
+		};
+	}
+	
 	/// The lifetimes for this function aren't <'static> because that would be an aliasing rule violation
 	/// (closure mutably borrows Node forever so no one else can mut borrow it again )
 	pub fn walk_mut<F: FnMut(&mut Node)>(&mut self, closure: &mut F ) {
@@ -122,6 +136,13 @@ impl Node {
 	}
 	
 }
+
+impl Drop for Node {
+	fn drop(&mut self) {
+		warn!("Node dropped (this doesn't happen with the current implementation)");
+	}
+}
+
 #[derive(Debug)]
 // this makes more sense here
 #[allow(non_camel_case_types)]
@@ -246,7 +267,7 @@ pub unsafe fn get_string(offset: usize) -> &'static str {
 		.to_str().unwrap()
 }
 
-pub fn build(mut token: *const u32) -> Node {
+fn build(mut token: *const u32) -> Node {
 	// Stores this node's future parents
 	// The parent-child relationship gets made in EndNode
 	let mut node_stack: VecDeque<Node> = VecDeque::new();

@@ -2,7 +2,6 @@
 if [ `cat drive.img` != "" ]; then
 	# Zero it
 	dd if=/dev/zero of=drive.img count=1K bs=512
-	echo hi
 fi
 
 if [ $GDB == "yes" ]; then
@@ -20,6 +19,6 @@ qemu-system-riscv64 -s \
 	-d unimp,guest_errors \
 	-blockdev driver=file,filename=drive.img,node-name=hda \
 	-device virtio-blk-device,drive=hda \
-	-smp 2 \
+	-smp 1 \
 	-m 128M \
 	-kernel $@

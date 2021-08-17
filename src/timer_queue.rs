@@ -34,9 +34,9 @@ impl PartialOrd for TimerEvent {
 impl Ord for TimerEvent {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         if self.instant == other.instant {
-        	return self.cause.cmp(&other.cause)
+        	self.cause.cmp(&other.cause)
         } else {
-        	return self.instant.cmp(&other.instant).reverse()
+        	self.instant.cmp(&other.instant).reverse()
         }
     }
 	// add code here

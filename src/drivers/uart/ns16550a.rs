@@ -80,9 +80,9 @@ impl Ns16550a {
 		
 		if dr_bit == 0 {
 			// If the DR bit isn't set, then there's no new data
-			return None;
+			None
 		} else {
-			return Some(unsafe { (*self.registers).byte_io.read() })
+			Some(unsafe { (*self.registers).byte_io.read() })
 		}
 		
 	}

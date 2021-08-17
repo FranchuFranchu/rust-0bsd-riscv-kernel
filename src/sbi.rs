@@ -122,7 +122,7 @@ pub fn set_absolute_timer(time: u64) -> Result<(), SBIError> {
 	// SAFETY: Assuming the SBI implementation is correct, setting a timer shouldn't cause anything bad in memory
 	// Note that this SBI call's return value is meaningless, so we erase it
 	// TODO: Use RV32 ABI for u64's here
-	unsafe { call_sbi_1(0x54494D45, 0, time as usize).map(|_| {()}) }
+	unsafe { call_sbi_1(0x54494D45, 0, time as usize).map(|_| {}) }
 }
 
 pub fn set_relative_timer(time: u64) -> Result<(), SBIError> {
@@ -139,7 +139,7 @@ pub fn shutdown(reason: usize) {
 
 /// Safety: Only if start_addr is an address capable of bootstrapping himself
 pub unsafe fn start_hart(hartid: usize, start_addr: usize, opaque: usize) -> Result<(), SBIError> {
-	call_sbi_3(0x48534D, 0, hartid, start_addr, opaque).map(|_| {()})
+	call_sbi_3(0x48534D, 0, hartid, start_addr, opaque).map(|_| {})
 }
 
 /// Safety: Only if start_addr is an address capable of bootstrapping himself

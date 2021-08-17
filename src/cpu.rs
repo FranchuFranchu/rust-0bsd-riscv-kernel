@@ -43,21 +43,29 @@ impl Registers {
 	}
 }
 
+/// # Safety
+/// This can cause hangups and other things that aren't very good
 #[inline(always)]
 pub unsafe fn write_sie(value: usize) {
 	llvm_asm!("csrw sie, $0" :: "r"(value) :: "volatile")
 }
 
+/// # Safety
+/// When setting interrupts, the proper context needs to be created for the trap handler
 #[inline(always)]
 pub unsafe fn write_sip(value: usize) {
 	llvm_asm!("csrw sip, $0" :: "r"(value) :: "volatile")
 }
 
+/// # Safety
+/// Must be s_trap
 #[inline(always)]
 pub unsafe fn write_stvec(value: usize) {
 	llvm_asm!("csrw stvec, $0" :: "r"(value) :: "volatile")
 }
 
+/// # Safety
+/// Must uphold SATP assumptions in the rest of the kernel. Mainly, that it's a valid page table
 #[inline(always)]
 pub unsafe fn write_satp(value: usize) {
 	llvm_asm!("
@@ -67,12 +75,16 @@ pub unsafe fn write_satp(value: usize) {
 }
 
 
+/// # Safety
+/// Too many constraints to document. Shouldn't be changed very frecuently.
 #[inline(always)]
 pub unsafe fn write_sstatus(value: usize) {
 	llvm_asm!("csrw sstatus, $0" :: "r"(value) :: "volatile")
 }
 
-// This is unsafe because other parts of the kernel rely on sscratch being a valid pointer
+/// This is unsafe because other parts of the kernel rely on sscratch being a valid pointer
+/// # Safety
+/// Must be a valid trap frame and must make sense with what the hart is executing
 #[inline(always)]
 pub unsafe fn write_sscratch(value: usize) {
 	llvm_asm!("csrw sscratch, $0" :: "r"(value) :: "volatile")

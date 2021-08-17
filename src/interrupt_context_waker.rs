@@ -6,7 +6,7 @@
 //! This is useful for giving functions the same context whether they're ran from a kernel thread or from an interrupt context
 //! *Interrupt tasks should NOT have blocking operations!*
 
-use core::task::Waker;
+
 use alloc::{
 	collections::VecDeque, 
 	boxed::Box, 
@@ -20,7 +20,7 @@ use crate::trap::in_interrupt_context;
 
 static WAITING_WAKERS: Mutex<Option<VecDeque<Arc<InterruptContextWaker>>>> = Mutex::new(None);
 
-pub struct InterruptContextWaker(pub Box<dyn Fn() -> () + Send + Sync>);
+pub struct InterruptContextWaker(pub Box<dyn Fn() + Send + Sync>);
 
 impl Wake for InterruptContextWaker {
 	fn wake(self: Arc<Self>) {

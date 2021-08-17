@@ -1,4 +1,4 @@
-use crate::{context_switch, cpu::{self, load_hartid, read_sscratch}, drivers::uart, external_interrupt, hart::get_this_hart_meta, interrupt_context_waker, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
+use crate::{context_switch, cpu::{self, load_hartid, read_sscratch}, external_interrupt, hart::get_this_hart_meta, interrupt_context_waker, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
 
 /// A pointer to this struct is placed in sscratch
 #[derive(Default, Debug, Clone)] // No copy because they really shouldn't be copied and used without changing the PID
@@ -64,8 +64,10 @@ pub(crate) fn clear_interrupt_context() {
 	unsafe { (*read_sscratch()).flags &= !1 }
 }
 
+/// # Safety
+/// This should never really be called directly from Rust. There's just too many invariants that need to be satisfied
 #[no_mangle]
-pub extern "C" fn trap_handler(
+pub unsafe extern "C"  fn trap_handler(
 	epc: usize,
 	tval: usize,
 	cause: usize,
@@ -158,5 +160,5 @@ pub extern "C" fn trap_handler(
 	
 	debug!("\x1b[1;36m^ EXIT TRAP {}\x1b[0m", load_hartid());
 	clear_interrupt_context();
-	return epc;
+	epc
 }

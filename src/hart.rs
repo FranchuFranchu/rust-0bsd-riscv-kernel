@@ -2,7 +2,7 @@
 
 use alloc::{collections::BTreeMap, sync::Arc, boxed::{Box}};
 use core::{pin::Pin, sync::atomic::AtomicBool};
-use spin::{RwLock, Mutex};
+use spin::{RwLock};
 use aligned::{A16, Aligned};
 
 use crate::{cpu::{self, load_hartid}, plic::Plic0, process::{self, TASK_STACK_SIZE}, s_trap_vector, sbi, scheduler::schedule_next_slice, timer_queue, trap::TrapFrame};
@@ -19,11 +19,12 @@ pub struct HartMeta {
 pub static HART_META: RwLock<BTreeMap<usize, Arc<HartMeta>>> = RwLock::new(BTreeMap::new());
 
 pub fn get_hart_meta(hartid: usize) -> Option<Arc<HartMeta>> {
-	HART_META.read().get(&hartid).map(|s| s.clone())
+	HART_META.read().get(&hartid).cloned()
 }
 
 // Only run this from the boot hart
-/// SAFETY: When sscratch contains a valid trap frame
+/// # Safety 
+/// When sscratch contains a valid trap frame
 pub unsafe fn add_boot_hart(trap_frame: TrapFrame) {
 	let meta = HartMeta { 
 		plic: Plic0::new_with_fdt(), 
@@ -63,6 +64,8 @@ pub fn get_this_hart_meta() -> Option<Arc<HartMeta>> {
 	get_hart_meta(load_hartid())
 }
 
+/// # Safety
+/// start_addr must be a function that is sound and sets up harts correctly
 pub unsafe fn start_all_harts(start_addr: usize) {
 	for hartid in 0.. {
 		match sbi::hart_get_status(hartid) {

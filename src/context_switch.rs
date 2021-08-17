@@ -36,7 +36,7 @@ pub fn make_this_process_pending() {
 	match unsafe { process::weak_get_process(&(*cpu::read_sscratch()).pid) }.upgrade() {
 		None => {
 			// probably a boot process
-			return;
+			
 		},
 		Some(p) => {
 			p.write().state = ProcessState::Pending

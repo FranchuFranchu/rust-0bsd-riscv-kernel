@@ -3,7 +3,7 @@ use alloc::{boxed::Box, collections::{BTreeMap}, sync::{Arc, Weak}, vec::Vec};
 use spin::{RwLock};
 
 use core::task::{Waker, RawWaker, RawWakerVTable};
-use crate::{context_switch, cpu::{self, load_hartid, read_sscratch, write_sscratch}, hart::get_this_hart_meta, scheduler::schedule_next_slice, trap::{self, TrapFrame}};
+use crate::{context_switch, cpu::{self, load_hartid, read_sscratch, write_sscratch}, hart::get_this_hart_meta, scheduler::schedule_next_slice, trap::{TrapFrame}};
 use crate::cpu::Registers;
 use aligned::{A16, Aligned};
 
@@ -59,13 +59,13 @@ impl Process {
 		if self.is_supervisor {
 			return true;
 		}
-		return false;
+		false
 	}
 	pub fn has_write_access(&self, address: usize, size: usize) -> bool {
 		if self.is_supervisor {
 			return true;
 		}
-		return false;
+		false
 	}
 	pub fn can_be_scheduled(&self) -> bool {
 		match self.state {
@@ -135,16 +135,14 @@ impl Process {
 		use core::task::Poll;
 		let poll_result = future.poll(&mut core::task::Context::from_waker(&self.construct_waker()));
 		
-		match poll_result { 
-			Poll::Pending => {
-				// Mark the task as yielded
-				self.state = ProcessState::Yielded;
-				schedule_next_slice(0);
-			},
-			_ => {},
+		if let Poll::Pending = poll_result {
+			// Mark the task as yielded
+			// We'll be woken up eventually and this will be called again
+			self.state = ProcessState::Yielded;
+			schedule_next_slice(0);
 		}
 		
-		return poll_result
+		poll_result
 	}
 	
 	pub fn this() -> Arc<RwLock<Process>> {
@@ -257,7 +255,7 @@ pub fn delete_process(pid: usize) {
 	// If our trap frame is the same one as the process's trap frame,
 	// change sscratch to use the boot trap frame
 	// (since the current sscratch is held by PROCESSES and will deallocated)
-	if read_sscratch() as *const TrapFrame == &*try_get_process(&pid).read().trap_frame as *const TrapFrame {
+	if core::ptr::eq(read_sscratch(), &*try_get_process(&pid).read().trap_frame) {
 		warn!("resetting trap frame");
 		unsafe { write_sscratch(&*get_this_hart_meta().unwrap().boot_frame as *const TrapFrame as usize) }
 	}
@@ -267,7 +265,7 @@ pub fn delete_process(pid: usize) {
 
 // This returns an empty Weak if the process doesn't exist
 pub fn weak_get_process(pid: &usize) -> Weak<RwLock<Process>>  {
-	PROCESSES.read().get(pid).map(|arc| Arc::downgrade(arc)).unwrap_or(Weak::new())
+	PROCESSES.read().get(pid).map(|arc| Arc::downgrade(arc)).unwrap_or_default()
 }
 
 // This assumes that the process exists and panics if it doesn't

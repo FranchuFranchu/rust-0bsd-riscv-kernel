@@ -6,6 +6,8 @@ pub mod sv32;
 pub mod sv39;
 pub mod sv48;
 
+// Clippy is stupid and doesn't realize that what we do for AddressMask is okay
+#[allow(clippy::enum_clike_unportable_variant)] 
 #[repr(usize)]
 enum EntryBits {
 	// The V bit indicates whether the PTE is valid; if it is 0, all other bits in the PTE are don’t-cares and may be used freely by software.
@@ -31,7 +33,7 @@ enum EntryBits {
 	Accessed = 1 << 6,
 	Dirty = 1 << 7,
 	
-	AddressMask = !((1 << 8) - 1),
+	AddressMask = usize::MAX ^ ((1 << 8) - 1), 
 	
 	CodeSupervisor = (1 << 1 | 1 << 3 | 1) as usize,
 	DataSupervisor = (1 << 1 | 1 << 2 | 1) as usize,

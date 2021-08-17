@@ -41,10 +41,10 @@ pub fn schedule() -> usize {
 	
 	process_sched_queue.rotate_left(1);
 	
-	return pid;
+	pid
 }
 
 pub fn schedule_next_slice(slices: u64) {
 	use timer_queue::{schedule_at, TimerEvent, TimerEventCause::*};
-	schedule_at(TimerEvent { instant: cpu::get_time() + slices * 10_000_00, cause: ContextSwitch} );
+	schedule_at(TimerEvent { instant: cpu::get_time() + slices * 1_000_000, cause: ContextSwitch} );
 }

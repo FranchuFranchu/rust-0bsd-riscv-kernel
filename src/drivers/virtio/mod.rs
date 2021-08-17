@@ -122,10 +122,10 @@ pub struct SplitVirtqueue {
 	
 	/// This pointer was allocated with Box::leak() and will then be reconstructed Box:from_raw before dropping
 	/// The layout of the data pointed to by this pointer is:
-	/// Virtqueue Part 		Alignment 	Size
-	/// Descriptor Table 	16	 		16∗(Queue Size)
-	/// Available Ring 		2 			6 + 2∗(Queue Size)
-	/// Used Ring 			4 			6 + 8∗(Queue Size) 
+	/// Virtqueue Part      Alignment   Size
+	/// Descriptor Table    16          16∗(Queue Size)
+	/// Available Ring      2           6 + 2∗(Queue Size)
+	/// Used Ring           4           6 + 8∗(Queue Size) 
 	pointer: *mut u8,
 	size: u16,
 	first_free_descriptor: u16,
@@ -283,7 +283,7 @@ impl SplitVirtqueue {
 			next: chain.unwrap_or(0)
 		};
 		
-		return descriptor_index
+		descriptor_index
 	}
 	
 	pub fn new_descriptor_from_static_buffer(&mut self, buffer: &'static [u8], device_writable: bool, chain: Option<u16>) -> u16 {
@@ -311,12 +311,12 @@ impl SplitVirtqueue {
 		unsafe {
 			let ring_ptr = (self.pointer.add(Self::available_ring_offset(&self.size)) as *mut u16).add(1);
 			let old = *ring_ptr;
-			*ring_ptr = *ring_ptr + 1;
+			*ring_ptr += 1;
 			if *ring_ptr == self.size {
 				warn!("Overflow in available queue");
 				*ring_ptr = 0;
 			}
-			return old
+			old
 		}
 	}
 	
@@ -324,7 +324,7 @@ impl SplitVirtqueue {
 	pub fn get_available_ring_idx(&self) -> u16 {
 		unsafe {
 			let ring_ptr = (self.pointer.add(Self::available_ring_offset(&self.size)) as *mut u16).add(1);
-			return *ring_ptr
+			*ring_ptr
 		}
 		
 	}
@@ -504,7 +504,7 @@ impl VirtioDevice {
 		match id {
 		    2 => { // Block device 
 		    	VirtioBlockDevice::negotiate_features(&mut this.lock());
-		    	let dev = VirtioBlockDevice::configure(this.clone()).unwrap();
+		    	let dev = VirtioBlockDevice::configure(this).unwrap();
 		    	Some(dev)
 		    },
 		    _ => {
@@ -600,7 +600,7 @@ pub trait VirtioDeviceType {
 	fn negotiate_features(device: &mut VirtioDevice) where Self: Sized {
 		device.get_device_features(); // ignore their features
 		device.set_driver_features(0);
-		device.accept_features(); // We don't care if our features aren't accepted
+		device.accept_features().unwrap(); // We don't care if our features aren't accepted
 	}
 	
 	fn on_used_queue_ready(&self, queue: u16) {

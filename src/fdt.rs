@@ -48,7 +48,7 @@ impl Node {
 		if first_component.contains('@') {
 			// Full unit address
 			let (name, address) = first_component.splitn(2, '@').next_tuple().unwrap();
-			if address == "" {
+			if address.is_empty() {
 				// A component ending with an @ allows any unit address (choose the first one then)
 				child = self.children.get(name)?.values().next()?
 			} else {
@@ -160,7 +160,7 @@ pub enum PropertyValue<'data> {
 
 impl<'data> PropertyValue<'data>  {
 	fn guess(value: &'data[u8], name: Option<&str>) -> PropertyValue<'data> {
-		if value.len() == 0 {
+		if value.is_empty() {
 			return PropertyValue::Empty;
 		} 
 		// Check if it has any bytes < 0x20
@@ -204,7 +204,7 @@ impl<'data> PropertyValue<'data>  {
 			}
 			return PropertyValue::u32(unsafe { *(value.as_ptr() as *const u32)}.swap_bytes());
 		};
-		return PropertyValue::PropSpecific(value);	
+		PropertyValue::PropSpecific(value)	
 	}
 	fn as_str(&self) -> String {
 		match self {

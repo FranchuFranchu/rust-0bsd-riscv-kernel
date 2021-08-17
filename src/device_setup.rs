@@ -34,7 +34,7 @@ pub fn setup_devices() {
 						
 						let handler;
 						if let Some(PropertyValue::u32(interrupt_id)) = node.properties.get("interrupts") {
-							let mut virtio_device = virtio_device.clone();
+							let virtio_device = virtio_device.clone();
 							handler = Some(ExternalInterruptHandler::new((*interrupt_id).try_into().unwrap(), alloc::sync::Arc::new(move |id| {
 								println!("{:?}", "lock");
 								VirtioDevice::on_interrupt(&*virtio_device);
@@ -44,14 +44,14 @@ pub fn setup_devices() {
 						}
 						
 						
-						let mut virtio_driver;
-						if let Some(d) = VirtioDevice::make_driver(virtio_device.clone()) {
+						let virtio_driver;
+						if let Some(d) = VirtioDevice::make_driver(virtio_device) {
 							virtio_driver = d;
 						} else {
 							return;
 						}
 						
-						let mut virtio_driver = Arc::new(virtio_driver);
+						let virtio_driver = Arc::new(virtio_driver);
 						
 						
 						

@@ -1,7 +1,7 @@
 //! Includes code for delegating different interrupts to different handlers
 //! 
 
-use alloc::{collections::BTreeMap, vec::Vec, boxed::Box};
+use alloc::{collections::BTreeMap, vec::Vec};
 use alloc::sync::Arc;
 use spin::RwLock;
 
@@ -29,7 +29,11 @@ fn remove_handler(id: u32, function: &Arc<dyn Fn(u32) + Send + Sync>) -> Result<
 	let mut guard = EXTERNAL_INTERRUPT_HANDLERS.write();
 	let v = guard.get_mut(&id).unwrap();
 	println!("{:?}", id);
-	let index = v.iter().position(|r| Arc::ptr_eq(r, function)).unwrap();
+	let index = v.iter().position(|r| {
+		// Thin both pointers
+		r as *const _ as *const () == function as *const _ as *const ()
+		
+	}).unwrap();
 	v.remove(index);
 	Ok(())
 }
@@ -44,7 +48,7 @@ impl  ExternalInterruptHandler {
 	pub fn new(id: u32, function: Arc<dyn Fn(u32) + Send + Sync>) -> Self {
 		println!("register {:?}", Arc::as_ptr(&function));
 		add_handler(id, function.clone());
-		Self { id, function: function }
+		Self { id, function }
 	}
 }
 

@@ -13,7 +13,7 @@ use crate::{cpu, process};
 // random-ish function I just made up
 fn twist(value: &mut usize) -> usize {
 	*value = value.wrapping_add(0x902392093222).bitxor(0b10101110101).bitand(0xFF);
-	return *value;
+	*value
 }
 
 pub fn test_task() {
@@ -27,7 +27,7 @@ pub fn test_task() {
 		}
 	}
 	for idx in 2..sieve.len() {
-		if sieve[idx] == true {
+		if sieve[idx] {
 			continue;
 		}
 		let mut jdx = idx * 2;
@@ -36,7 +36,7 @@ pub fn test_task() {
 			jdx += idx;
 		}
 		for maybe_prime_idx in 2..idx {
-			if sieve[maybe_prime_idx] == false && not_removed.contains(&maybe_prime_idx) {
+			if !sieve[maybe_prime_idx] && not_removed.contains(&maybe_prime_idx) {
 				println!("Prime: {}", maybe_prime_idx);
 				not_removed.remove(&maybe_prime_idx);
 			}

@@ -1,7 +1,7 @@
 use core::pin::Pin;
 use core::task::{Context, Waker};
 use core::future::Future;
-use itertools::Itertools;
+
 use spin::Mutex;
 
 use crate::{cpu, interrupt_context_waker::InterruptContextWaker, repr_c_serde::ReprCSerializer};
@@ -10,11 +10,11 @@ use alloc::{
 	task::Wake,
 	boxed::Box,
 	vec::Vec,
-	collections::{BTreeMap, BTreeSet},
+	collections::{BTreeMap},
 };
 
 use super::{SplitVirtqueue, VirtioDevice, VirtioDeviceType};
-use crate::repr_c_serde::ReprCDeserializer;
+
 
 // See https://docs.oasis-open.org/virtio/virtio/v1.1/cs01/virtio-v1.1-cs01.html#x1-2440004
 // section 5.2.6
@@ -62,7 +62,7 @@ impl Future for BlockRequestFuture {
 	
 	
 	fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<<Self as Future>::Output> { 
-		if let None = self.buffer {
+		if self.buffer.is_none() {
 			// Check if the driver has been done yet
 			if let Some(buffer) = self.device.upgrade().unwrap().lock().take_buffer(&self.descriptor_id.unwrap()) {
 				self.buffer = Some(buffer);
@@ -98,7 +98,7 @@ impl VirtioBlockDevice {
 			header: RequestHeader {
 				r#type: if write { 1 } else { 0 },
 				reserved: 0,
-				sector: sector,
+				sector,
 			},
 			buffer: Some(buffer),
 			descriptor_id: None,
@@ -110,7 +110,7 @@ impl VirtioBlockDevice {
 		
 		let mut vq_lock = self.request_virtqueue.lock();
 		
-		let mut status = alloc::vec![0xFFu8; 1].into_boxed_slice();
+		let status = alloc::vec![0xFFu8; 1].into_boxed_slice();
 		
 		let mut last = vq_lock.new_descriptor_from_boxed_slice(status, true, None);
 		
@@ -150,10 +150,10 @@ impl VirtioBlockDevice {
 			let mut vq_lock = self.request_virtqueue.lock();
 			
 			// Create the iterator for this descriptor chain
-			let descriptor_chain_data_iterator = vq_lock.pop_used_element_to_iterator();
+			let mut descriptor_chain_data_iterator = vq_lock.pop_used_element_to_iterator();
 			let descriptor_id = descriptor_chain_data_iterator.pointed_chain.unwrap();
 			
-			let mut data: Vec<u8> = descriptor_chain_data_iterator.clone()
+			let data: Vec<u8> = descriptor_chain_data_iterator
 				// Join all the &[u8]s together into one iterator
 				.flatten()
 				// Copy the iterator data
@@ -166,7 +166,7 @@ impl VirtioBlockDevice {
 			
 			// Now, try to recreate the Box<[u8]> that was used to create this
 			// Reconstruct the buffer box
-			let buffer_start_ptr = descriptor_chain_data_iterator.skip(1).next().unwrap().as_ptr() as *mut u8;
+			let buffer_start_ptr = descriptor_chain_data_iterator.nth(1).unwrap().as_ptr() as *mut u8;
 			let buffer_len = request_body.len();
 			// SAFETY: This is constructed on do_request, and I think this is the "correct" way to restore it
 			let buffer_box = unsafe { Box::from_raw(core::slice::from_raw_parts_mut(buffer_start_ptr, buffer_len)) };
@@ -175,12 +175,12 @@ impl VirtioBlockDevice {
 			let items = self.waiting_requests.get_mut(&descriptor_id).map(|vec| vec.iter_mut());
 			
 			
-			if let None = items {
+			if items.is_none() {
 				info!("No one was waiting for this!");
 				return;
 			}
 			
-			let mut items = items.unwrap();
+			let items = items.unwrap();
 			
 			for i in items.into_iter() {
 				i.wake_by_ref();
@@ -191,7 +191,7 @@ impl VirtioBlockDevice {
 			
 		} else {
 			// It's pending, but we will be woken up eventually
-			return;
+			
 		}
 	}
 	
@@ -210,9 +210,9 @@ impl VirtioBlockDevice {
 }
 
 impl VirtioDeviceType for VirtioBlockDevice {
-	fn configure(mut device: Arc<Mutex<VirtioDevice>>) -> Result<Arc<Mutex<Self>>, ()> {
+	fn configure(device: Arc<Mutex<VirtioDevice>>) -> Result<Arc<Mutex<Self>>, ()> {
 		let q = device.lock().configure_queue(0);
-		let mut dev = VirtioBlockDevice { request_virtqueue: Mutex::new(q), device: device, this: Weak::new(), waiting_requests: BTreeMap::new(), header_buffers: BTreeMap::new() };
+		let dev = VirtioBlockDevice { request_virtqueue: Mutex::new(q), device, this: Weak::new(), waiting_requests: BTreeMap::new(), header_buffers: BTreeMap::new() };
 		let dev = Arc::new(Mutex::new(dev));
 		dev.lock().this = Arc::downgrade(&dev);
 		
@@ -234,7 +234,7 @@ impl VirtioDeviceType for VirtioBlockDevice {
 				data[3] = 68;
 				data[4] = 69;
 				
-				let mut request = dev_clone.lock().create_request(0, data, true);
+				let request = dev_clone.lock().create_request(0, data, true);
 				request.await
 			};
 			let dev_clone = dev_clone.clone();

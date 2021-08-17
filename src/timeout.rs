@@ -24,7 +24,7 @@ impl Future for TimeoutFuture {
 
     fn poll(self: core::pin::Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
         if cpu::get_time() >= self.for_time {
-        	return Poll::Ready(cpu::get_time());
+        	Poll::Ready(cpu::get_time())
         } else {
         	// Register the current task for wakeup
         	// WAITING_TIMEOUTS gets checked during a time interrupt
@@ -32,7 +32,7 @@ impl Future for TimeoutFuture {
             // binary_search_by returns Err when the item is not found
             // This is what we expect, because there shouldn't be two equal TimeoutFuture::for_time values in the Vec
         	let index = WAITING_TIMEOUTS.write().binary_search_by(|s| {
-        		return self.for_time.cmp(&s.0.for_time);
+        		self.for_time.cmp(&s.0.for_time)
         	});
             
             let insert_position;
@@ -46,13 +46,13 @@ impl Future for TimeoutFuture {
             }
         	
             // Remember to wake up this future when necessary
-            WAITING_TIMEOUTS.write().insert(insert_position, (self.clone(), cx.waker().clone()));
+            WAITING_TIMEOUTS.write().insert(insert_position, (*self, cx.waker().clone()));
             
             // Trigger a timer interrupt in the target time
             use crate::timer_queue::{TimerEvent, TimerEventCause};
             timer_queue::schedule_at(TimerEvent { instant: self.for_time, cause: TimerEventCause::TimeoutFuture,  });
             
-        	return Poll::Pending;
+        	Poll::Pending
         }
     }
 	// add code here
@@ -73,8 +73,6 @@ pub fn on_timer_event(instant: u64) {
     for i in 0..max_remove_index {
         // This would trigger a unused-future warning otherwise
         // because rustc isn't smart enough to realize that all futures before max_remove_index would have been woken up before being removed
-        #[allow(unused_must_use)] {
-            lock.remove(i)
-        };
+        #[allow(unused_must_use)] lock.remove(i);
     }
 }

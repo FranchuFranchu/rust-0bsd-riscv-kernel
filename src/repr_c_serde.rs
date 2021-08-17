@@ -2,8 +2,8 @@
 //! Don't think it's fully safe, use at your own risk!
 //! (but, it's meant to be safe)
 
-use core::ops::{Deref, DerefMut};
-use core::marker::{PhantomData, Copy};
+use core::ops::{Deref};
+use core::marker::{Copy};
 use core::slice;
 
 pub struct ReprCDeserializer<'a, T: Copy + Sized> {

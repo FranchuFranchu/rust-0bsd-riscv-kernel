@@ -6,20 +6,20 @@
 .option norvc
 .altmacro
 .set NUM_GP_REGS, 32  # Number of registers per context
-.set REG_SIZE, 8   # Register size (in bytes)
+
 
 # Use macros for saving and restoring multiple registers
 .macro save_gp i, basereg=t6
-	sd	x\i, ((\i)*REG_SIZE)(\basereg)
+	sx	x\i, ((\i)*XLEN)(\basereg)
 .endm
 .macro load_gp i, basereg=t6
-	ld	x\i, ((\i)*REG_SIZE)(\basereg)
+	lx	x\i, ((\i)*XLEN)(\basereg)
 .endm
 .macro save_fp i, basereg=t6
-	fsd	f\i, ((NUM_GP_REGS+(\i))*REG_SIZE)(\basereg)
+	fsx	f\i, ((NUM_GP_REGS+(\i))*XLEN)(\basereg)
 .endm
 .macro load_fp i, basereg=t6
-	fld	f\i, ((NUM_GP_REGS+(\i))*REG_SIZE)(\basereg)
+	flx	f\i, ((NUM_GP_REGS+(\i))*XLEN)(\basereg)
 .endm
 
 .macro store_volatile_registers
@@ -28,7 +28,7 @@
 	# All registers are volatile here, we need to save them
 	# before we do anything.
 	csrrw	t6, sscratch, t6
-	# csrrw will atomically swap t6 into sscratch and the old
+	# csrrw will atomically swap t6 into sscratch and the olx
 	# value of sscratch into t6. This is nice because we just
 	# switched values and didn't destroy anything -- all atomically!
 	# in cpu.rs we have a structure of:
@@ -113,14 +113,13 @@ s_trap_vector:
 	# Get ready to go into Rust (trap.rs)
 	# csrw	sie, zero
 	
-	.set XLEN, 8
-	ld 		sp, XLEN*35(t5)
+	lx 		sp, XLEN*35(t5)
 	csrr	a0, sepc
-	sd		a0, XLEN*32(t5)
+	sx		a0, XLEN*32(t5)
 	csrr	a1, stval
 	csrr	a2, scause
-	ld		a0, XLEN*32(t5)
-	ld		a3, XLEN*33(t5)
+	lx		a0, XLEN*32(t5)
+	lx		a3, XLEN*33(t5)
 	csrr	a4, sstatus
 	csrr	a5, sscratch
 	
@@ -129,7 +128,7 @@ s_trap_vector:
 	# We haven't gotten userspace to work yet, so we can assume that this interrupt was triggered in kernel mode
 	
 	# la		t0, KERNEL_STACK_END
-	# ld		sp, 0(t0)
+	# lx		sp, 0(t0)
 	call	trap_handler
 	
 	# When we get here, we've returned from m_trap, restore registers
@@ -146,7 +145,7 @@ trap_exit:
 .global switch_to_supervisor_frame	
 switch_to_supervisor_frame:
 	csrw sscratch, a0
-	ld t0, XLEN*32(a0)
+	lx t0, XLEN*32(a0)
 	csrw sepc, t0
 	restore_volatile_registers
 .global switch_to_supervisor_frame_end
@@ -165,11 +164,11 @@ do_syscall_internal:
 	
 	la 		sp, _stack_start
 	mv	a0, ra
-	sd		a0, XLEN*32(t5)
+	sx		a0, XLEN*32(t5)
 	li		a1, 0
 	csrr	a2, 9
-	ld		a0, XLEN*32(t5)
-	ld		a3, XLEN*33(t5)
+	lx		a0, XLEN*32(t5)
+	lx		a3, XLEN*33(t5)
 	csrr	a4, sstatus
 	csrr	a5, sscratch
 	
@@ -178,7 +177,7 @@ do_syscall_internal:
 	# We haven't gotten userspace to work yet, so we can assume that this interrupt was triggered in kernel mode
 	
 	# la		t0, KERNEL_STACK_END
-	# ld		sp, 0(t0)
+	# lx		sp, 0(t0)
 	call	trap_handler
 	
 	# When we get here, we've returned from m_trap, restore registers

@@ -26,7 +26,7 @@
 extern crate alloc;
 
 use core::{panic::PanicInfo, ffi::c_void};
-use crate::{cpu::load_hartid, hart::get_hart_meta, plic::Plic0};
+use crate::{cpu::{load_hartid, read_sscratch}, hart::get_hart_meta, plic::Plic0};
 use core::sync::atomic::Ordering;
 
 #[macro_use]
@@ -67,9 +67,11 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 		panic!("main() called more than once!");
 	}
 	
+	
 	cpu::BOOT_HART.store(hartid, Ordering::Relaxed);
 	
 	unsafe { crate::drivers::uart::Uart::new(0x1000_0000).setup() };
+	
 	
 	
 	// SAFETY: We're the only hart, there's no way the data gets changed by someone else meanwhile
@@ -89,7 +91,7 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	
 	// SAFETY: identity_map is valid when the root page is valid, which in this case is true
 	// and paging is disabled now
-	unsafe { paging::sv39::identity_map(&mut paging::ROOT_PAGE as *mut paging::Table) }
+	#[cfg(target_arch = "riscv64")] unsafe { paging::sv39::identity_map(&mut paging::ROOT_PAGE as *mut paging::Table) }
 	
 	// Initialize allocation
 	allocator::init();
@@ -104,7 +106,7 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	
 	// Setup paging
 	// SAFETY: If identity mapping did its thing right, then nothing should change
-	unsafe { cpu::write_satp(
+	#[cfg(target_arch = "riscv64")] unsafe { cpu::write_satp(
 		(&mut paging::ROOT_PAGE as *mut paging::Table as usize) >> 12 
 		| cpu::csr::SATP_SV39) }
 	
@@ -130,6 +132,8 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	plic.set_enabled(8, true);
 	plic.set_priority(8, 3);
 	
+	
+	
 	// Finally, enable interrupts in the cpu level
 	// SAFETY: We're enabling interrupts, since we've set stvec already that's not dangerous
 	unsafe { 
@@ -148,11 +152,12 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	// process::new_supervisor_process(test_task::test_task);
 	// process::new_supervisor_process(test_task::test_task_2);
 	process::new_supervisor_process(test_task::test_task_3);
-	 process::new_supervisor_process(process::idle_entry_point);
+	process::new_supervisor_process(process::idle_entry_point);
 	
 	
 	timer_queue::init();
 	timer_queue::init_hart();
+	
 	
 	unsafe { hart::start_all_harts(new_hart as usize) };
 	

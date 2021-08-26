@@ -215,6 +215,6 @@ pub mod csr {
 	// SATP flags
 	pub const SATP_BARE: usize = 0;
 	pub const SATP_SV32: usize = 1 << 30;
-	pub const SATP_SV39: usize = 8 << 60;
-	pub const SATP_SV48: usize = 9 << 60;
+	#[cfg(target_arch = "riscv64")] pub const SATP_SV39: usize = 8 << 60;
+	#[cfg(target_arch = "riscv64")] pub const SATP_SV48: usize = 9 << 60;
 }

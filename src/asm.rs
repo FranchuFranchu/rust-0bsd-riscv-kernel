@@ -1,9 +1,16 @@
+
 // Include assembly files
+
+#[cfg(all(target_feature = "f", target_arch = "riscv64"))] global_asm!(include_str!("asm/arch/rv64f.S"));
+#[cfg(all(not(target_feature = "f"), target_arch = "riscv64"))] global_asm!(include_str!("asm/arch/rv64.S"));
+#[cfg(all(target_feature = "f", target_arch = "riscv32"))] global_asm!(include_str!("asm/arch/rv32f.S"));
+#[cfg(all(not(target_feature = "f"), target_arch = "riscv32"))] global_asm!(include_str!("asm/arch/rv32.S"));
 
 global_asm!(include_str!("asm/boot.S"));
 global_asm!(include_str!("asm/trap.S"));
 global_asm!(include_str!("asm/syscall.S"));
 global_asm!(include_str!("asm/hart boot.S"));
+
 
 
 // Link some assembly symbols

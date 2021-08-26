@@ -3,8 +3,8 @@
 
 
 pub mod sv32;
-pub mod sv39;
-pub mod sv48;
+#[cfg(target_arch = "riscv64")] pub mod sv39;
+#[cfg(target_arch = "riscv64")] pub mod sv48;
 
 // Clippy is stupid and doesn't realize that what we do for AddressMask is okay
 #[allow(clippy::enum_clike_unportable_variant)] 
@@ -87,5 +87,5 @@ pub static mut ROOT_PAGE: Table = Table::zeroed();
 pub const ENTRY_COUNT: usize = 512;
 pub const PAGE_ALIGN: usize = 4096;
 pub const MEGAPAGE_SIZE: usize = PAGE_ALIGN * ENTRY_COUNT;
-pub const GIGAPAGE_SIZE: usize = PAGE_ALIGN * ENTRY_COUNT * ENTRY_COUNT;
-pub const TERAPAGE_SIZE: usize = PAGE_ALIGN * ENTRY_COUNT * ENTRY_COUNT * ENTRY_COUNT;
+#[cfg(target_arch = "riscv64")] pub const GIGAPAGE_SIZE: usize = PAGE_ALIGN * ENTRY_COUNT * ENTRY_COUNT;
+#[cfg(target_arch = "riscv64")] pub const TERAPAGE_SIZE: usize = PAGE_ALIGN * ENTRY_COUNT * ENTRY_COUNT * ENTRY_COUNT;

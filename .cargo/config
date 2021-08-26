@@ -2,5 +2,8 @@
 target = "riscv64gc-unknown-none-elf"
 rustflags = ['-Clink-arg=-Tsrc/ld/virt.ld']
 
+[target.riscv32imac-unknown-none-elf]
+runner = ["./run.sh", "32", "riscv32imac"]
+
 [target.riscv64gc-unknown-none-elf]
-runner = """./run.sh"""
+runner = ["./run.sh", "64", "riscv64gc"]

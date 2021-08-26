@@ -1,7 +1,7 @@
 .global do_supervisor_syscall
 do_supervisor_syscall:
 	addi sp, sp, -16
-	sd ra, (sp)
+	sx ra, (sp)
 	mv t0, a7
 	mv a7, a0
 	mv a0, a1
@@ -17,6 +17,6 @@ do_supervisor_syscall:
 	ori t0, t0, 1 << 1
 	csrw sip, t0
 	
-	ld ra, (sp)
+	lx ra, (sp)
 	addi sp, sp, 16
 	ret

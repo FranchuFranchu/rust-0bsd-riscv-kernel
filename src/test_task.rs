@@ -16,7 +16,7 @@ use crate::{cpu, fdt, process};
 
 // random-ish function I just made up
 fn twist(value: &mut usize) -> usize {
-	*value = value.wrapping_add(0x902392093222).bitxor(0b10101110101).bitand(0xFF);
+	*value = value.wrapping_add(#[cfg(target_arch = "riscv64")] { 0x902392093222 }, #[cfg(target_arch = "riscv32")] { 0x90233423 } ).bitxor(0b10101110101).bitand(0xFF);
 	*value
 }
 

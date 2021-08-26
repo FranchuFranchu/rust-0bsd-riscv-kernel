@@ -31,6 +31,8 @@ use core::sync::atomic::Ordering;
 
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate zerocopy;
 
 
 // Linker symbols
@@ -145,7 +147,8 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	
 	// process::new_supervisor_process(test_task::test_task);
 	// process::new_supervisor_process(test_task::test_task_2);
-	process::new_supervisor_process(process::idle_entry_point);
+	process::new_supervisor_process(test_task::test_task_3);
+	 process::new_supervisor_process(process::idle_entry_point);
 	
 	
 	timer_queue::init();
@@ -168,6 +171,7 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
 	
+	println!("{:?}", info.message());
     // Disable ALL interrupts
     unsafe { 
 		cpu::write_sie(0);
@@ -237,12 +241,13 @@ pub mod syscall;
 pub mod drivers;
 pub mod sbi;
 pub mod scheduler;
-pub mod file_descriptor;
+pub mod future;
+pub mod handle;
 pub mod process;
 pub mod test_task;
 pub mod logger;
 pub mod fdt;
 pub mod plic;
-pub mod repr_c_serde;
 pub mod hart;
 pub mod timeout;
+pub mod lock;

@@ -5,7 +5,7 @@ use core::task::{Waker, Poll};
 use core::future::Future;
 
 
-use spin::RwLock;
+use crate::lock::shared::RwLock;
 
 use crate::{cpu, timer_queue};
 

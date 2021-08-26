@@ -8,7 +8,11 @@ use core::pin::Pin;
 use alloc::{collections::BTreeSet, vec::Vec};
 
 
-use crate::{cpu, process};
+use crate::drivers::traits::block::GenericBlockDevice;
+use crate::drivers::virtio::VirtioDriver;
+use crate::drivers::virtio::block::VirtioBlockDevice;
+use crate::external_interrupt::ExternalInterruptHandler;
+use crate::{cpu, fdt, process};
 
 // random-ish function I just made up
 fn twist(value: &mut usize) -> usize {
@@ -79,6 +83,87 @@ pub fn test_task_2() {
 	}
 	
 	info!("Timeout finished");
+}
+
+pub fn test_task_3() {
+{	
+	use crate::lock::shared::Mutex;
+	
+	let m = Mutex::new(0);
+	
+	let m1 = m.lock();
+	
+	drop(m1);
+	let m2 = m.lock();
+}
+	use alloc::sync::Arc;
+	use crate::lock::shared::Mutex;
+	use core::any::Any;
+	let exec = crate::future::Executor::new();
+	let block = async {
+		use crate::drivers::traits::block::BlockDevice;
+		
+		let block_device: Arc<Mutex<VirtioBlockDevice>>;
+		{
+			let guard = fdt::root().read();
+			let block_device_node = guard.get("soc/virtio_mmio@10008000").unwrap();
+			let lock = block_device_node.kernel_struct.read();
+			let bd = lock.as_ref().unwrap().downcast_ref::<(VirtioDriver, Option<ExternalInterruptHandler>)>();
+			
+			
+			let bd = if let VirtioDriver::Block(bd) = &bd.as_ref().unwrap().0 {
+				bd
+			} else {
+				panic!("Block device not found!");
+			};
+			let bd = bd.lock();
+			
+			// This is done to allow dropping the locks
+			block_device = bd.this.upgrade().unwrap();
+		}
+		
+		let mut v: Vec<u8> = Vec::new();
+		v.resize(512, 0);
+		
+		
+		v[0] = 65;
+		v[1] = 67;
+		
+		println!("Write: {:?}", v);
+		
+		
+		let request = block_device.lock().create_request(0, v.into_boxed_slice(), true);
+		
+		let buf = request.await;
+		
+		let mut v: Vec<u8> = Vec::new();
+		v.resize(512, 0);
+		
+		// Read the block again
+		let request = block_device.lock().create_request(0, v.into_boxed_slice(), false);
+		
+		let buf = request.await;
+		
+		
+		println!("Read: {:?}", buf);
+		
+		crate::sbi::shutdown(0);
+		
+		
+	};
+	let block = Box::pin(block);
+	let block = Box::new(block);
+	use alloc::boxed::Box;
+	exec.push_future(block);
+	
+	// TODO maybe use Some(task) in the future?
+	while let Some(None) = exec.run_one() {
+		
+	}
+	println!("{:?}", "fini");
+	
+	
+	
 }
 
 #[inline]

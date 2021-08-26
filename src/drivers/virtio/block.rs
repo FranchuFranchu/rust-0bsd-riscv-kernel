@@ -2,9 +2,9 @@ use core::pin::Pin;
 use core::task::{Context, Waker};
 use core::future::Future;
 
-use spin::Mutex;
+use crate::lock::shared::Mutex;
 
-use crate::{cpu, interrupt_context_waker::InterruptContextWaker, repr_c_serde::ReprCSerializer};
+use crate::{interrupt_context_waker::InterruptContextWaker};
 use alloc::{
 	sync::{Arc, Weak},
 	task::Wake,
@@ -36,7 +36,7 @@ pub struct VirtioBlockDevice {
 	device: Arc<Mutex<VirtioDevice>>,
 	
 	/// A weak pointer to itself. This has to be used when callbacks need to use self later on (when the &mut self has expired) 
-	this: Weak<Mutex<Self>>,
+	pub this: Weak<Mutex<Self>>,
 	
 	// A map between descriptor IDs and Wakers
 	waiting_requests: BTreeMap<u16, Vec<Waker>>,
@@ -49,50 +49,57 @@ pub struct BlockRequestFuture {
 	header: RequestHeader,
 	// The buffer is moved out when block operation is being carried out, and then it's moved
 	// back in when it's done (AFTER the future is poll()'d). 
-	buffer: Option<Box<[u8]>>,
-	descriptor_id: Option<u16>,
-	was_queued: bool,
+	pub buffer: Option<Box<[u8]>>,
+	pub descriptor_id: Option<u16>,
+	pub was_queued: bool,
 }
 
 
 use core::task::Poll;
 
 impl Future for BlockRequestFuture {
-	type Output = ();
+	type Output = Option<Box<[u8]>>;
 	
 	
 	fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<<Self as Future>::Output> { 
+		let mut device = self.device.upgrade().unwrap();
+		let mut device = device.lock();
 		if self.buffer.is_none() {
 			// Check if the driver has been done yet
-			if let Some(buffer) = self.device.upgrade().unwrap().lock().take_buffer(&self.descriptor_id.unwrap()) {
+			if let Some(buffer) = device.take_buffer(&self.descriptor_id.unwrap()) {
 				self.buffer = Some(buffer);
-				Poll::Ready(())
+				Poll::Ready(self.buffer.take())
 			} else {
-				self.device.upgrade().unwrap().lock().register_waker(&self.descriptor_id.unwrap(), cx.waker().clone());
+				device.register_waker(&self.descriptor_id.unwrap(), cx.waker().clone());
 				Poll::Pending
 			}
 		} else if self.was_queued {
 			// the block operation is done
-			Poll::Ready(())
+			Poll::Ready(self.buffer.take())
 		} else {
 			// the block operation hasn't been started yet
 			self.was_queued = true;
 			
-			self.descriptor_id = Some(self.device.upgrade().unwrap().lock().do_request(&mut self));
+			
+			self.descriptor_id = Some(device.do_request(&mut self));
 			// Register ourselves as a waker
-			self.device.upgrade().unwrap().lock().register_waker(&self.descriptor_id.unwrap(), cx.waker().clone());
+			device.register_waker(&self.descriptor_id.unwrap(), cx.waker().clone());
+			
+			// Release lock to prevent deadlocks
+			drop(device);
+			// Now, tell the device that we're ready for a request
+			self.device.upgrade().unwrap().lock().begin_request(&self.descriptor_id.unwrap());
 			
 			Poll::Pending
 		}
 	}
 }
 
-impl VirtioBlockDevice {
-	fn instance_configure(&self) {
-		self.device.lock().driver_ok();
-	}
-	
-	fn create_request<'a>(&self, sector: u64, buffer: Box<[u8]>, write: bool) -> BlockRequestFuture {
+use crate::drivers::BlockDevice;
+
+impl BlockDevice for VirtioBlockDevice {
+	type Request = BlockRequestFuture;
+	fn _create_request(&self, sector: u64, buffer: Box<[u8]>, write: bool) -> Self::Request {
 		BlockRequestFuture {
 			device: self.this.clone(),
 			header: RequestHeader {
@@ -105,8 +112,15 @@ impl VirtioBlockDevice {
 			was_queued: false,
 		}
 	}
+}
+
+impl VirtioBlockDevice {
+	fn instance_configure(&self) {
+		self.device.lock().driver_ok();
+	}
 	
-	fn do_request(&mut self, future: &mut BlockRequestFuture) -> u16 {
+	
+	pub fn do_request(&mut self, future: &mut BlockRequestFuture) -> u16 {
 		
 		let mut vq_lock = self.request_virtqueue.lock();
 		
@@ -121,12 +135,15 @@ impl VirtioBlockDevice {
 		}
 		last = vq_lock.new_descriptor_from_sized(&future.header, false, Some(last));
 		
-		// Make the descriptor chain available and notify the device that the virtqueue is ready
-		vq_lock.make_available(last);
-		self.device.lock().queue_ready(0);
-		
 		// Return the head of the descriptor chain
 		last
+	}
+	
+	pub fn begin_request(&mut self, descriptor_id: &u16) {
+		let mut vq_lock = self.request_virtqueue.lock();
+		// Make the descriptor chain available and notify the device that the virtqueue is ready
+		vq_lock.make_available(*descriptor_id);
+		self.device.lock().queue_ready(0);
 	}
 	
 	/// Sets up a callback future for when the device has finished processing a request we made
@@ -143,6 +160,7 @@ impl VirtioBlockDevice {
 		}))).into()));
 		drop(device_ref);
 		
+		
 		if let Poll::Ready(queue_idx) = result {
 			assert!(queue_idx == 0);
 			
@@ -155,9 +173,7 @@ impl VirtioBlockDevice {
 			
 			let data: Vec<u8> = descriptor_chain_data_iterator
 				// Join all the &[u8]s together into one iterator
-				.flatten()
-				// Copy the iterator data
-				.map(|s| *s)
+				.flatten().copied()
 				// Create a Vec<u8>
 				.collect();
 			
@@ -171,9 +187,9 @@ impl VirtioBlockDevice {
 			// SAFETY: This is constructed on do_request, and I think this is the "correct" way to restore it
 			let buffer_box = unsafe { Box::from_raw(core::slice::from_raw_parts_mut(buffer_start_ptr, buffer_len)) };
 			
+			self.header_buffers.insert(descriptor_id, buffer_box);
 			
 			let items = self.waiting_requests.get_mut(&descriptor_id).map(|vec| vec.iter_mut());
-			
 			
 			if items.is_none() {
 				info!("No one was waiting for this!");
@@ -223,36 +239,6 @@ impl VirtioDeviceType for VirtioBlockDevice {
 		// Configure the instance later on (to prevent deadlocks)
 		Arc::new(InterruptContextWaker(Box::new(move || {
 			dev_clone.lock().instance_configure();
-			
-			let block = async {
-				let mut data = alloc::vec![0u8; 512].into_boxed_slice();
-				
-				// Write "ABCDE"
-				data[0] = 65;
-				data[1] = 66;
-				data[2] = 67;
-				data[3] = 68;
-				data[4] = 69;
-				
-				let request = dev_clone.lock().create_request(0, data, true);
-				request.await
-			};
-			let dev_clone = dev_clone.clone();
-			
-			let rc = Arc::new(InterruptContextWaker(Box::new(move || {
-				// Now we can recreate self based on the weak pointer we moved
-				// and then poll it again.
-				// The value should be Ready now
-				
-				println!("{:?}", "Waken");
-			})));
-			let waker = &(rc).into();
-			let mut cx = Context::from_waker(waker);
-			let mut pinned = Box::pin(block);
-			println!("Write result: {:?}", pinned.as_mut().poll(&mut cx));
-			;
-			/**/
-			
 		}))).wake();
 		Ok(dev)
 	}

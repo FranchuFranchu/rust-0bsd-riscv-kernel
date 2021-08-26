@@ -14,7 +14,7 @@ use alloc::{
 	sync::Arc
 };
 
-use spin::Mutex;
+use crate::lock::shared::Mutex;
 
 use crate::trap::in_interrupt_context;
 

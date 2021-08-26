@@ -20,8 +20,9 @@ pub fn context_switch(pid: &usize) -> ! {
 
 	let mut guard = lock.write();
 	
+	
 	// Unlock the write lock
-	unsafe { lock.force_write_unlock() };
+	unsafe { lock.force_unlock_write() };
 	// Decrement the Arc refcount
 	unsafe { 
 		let raw = Arc::into_raw(lock.clone());

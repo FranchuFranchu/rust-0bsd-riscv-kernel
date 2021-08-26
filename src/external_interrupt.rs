@@ -3,12 +3,11 @@
 
 use alloc::{collections::BTreeMap, vec::Vec};
 use alloc::sync::Arc;
-use spin::RwLock;
+use crate::lock::shared::RwLock;
 
 static EXTERNAL_INTERRUPT_HANDLERS: RwLock<BTreeMap<u32, Vec<Arc<dyn Fn(u32) + Send + Sync>>>> = RwLock::new(BTreeMap::new());
 
 pub fn external_interrupt(id: u32) {
-	info!("External int {}", id);
 	if let Some(fns) = EXTERNAL_INTERRUPT_HANDLERS.read().get(&id) {
 		for function in fns.iter() {
 			function(id);
@@ -28,11 +27,11 @@ fn add_handler(id: u32, function: Arc<dyn Fn(u32) + Send + Sync>) {
 fn remove_handler(id: u32, function: &Arc<dyn Fn(u32) + Send + Sync>) -> Result<(), ()> {
 	let mut guard = EXTERNAL_INTERRUPT_HANDLERS.write();
 	let v = guard.get_mut(&id).unwrap();
-	println!("{:?}", id);
 	let index = v.iter().position(|r| {
-		// Thin both pointers
-		r as *const _ as *const () == function as *const _ as *const ()
-		
+		// If both Arcs were created from the same object, then this should always be correct
+		// The dyn Fn vtable is only crated once, when the External Interrupt Handler is registered
+		// (but i'm not actually sure though)
+		#[allow(clippy::vtable_address_comparisons)] Arc::ptr_eq(&r, &function)
 	}).unwrap();
 	v.remove(index);
 	Ok(())
@@ -44,9 +43,8 @@ pub struct ExternalInterruptHandler {
 	function: Arc<dyn Fn(u32) + Send + Sync>,
 }
 
-impl  ExternalInterruptHandler {
+impl ExternalInterruptHandler {
 	pub fn new(id: u32, function: Arc<dyn Fn(u32) + Send + Sync>) -> Self {
-		println!("register {:?}", Arc::as_ptr(&function));
 		add_handler(id, function.clone());
 		Self { id, function }
 	}
@@ -54,7 +52,6 @@ impl  ExternalInterruptHandler {
 
 impl Drop for ExternalInterruptHandler {
 	fn drop(&mut self) {
-		println!("dropped {:?}", Arc::as_ptr(&self.function));
 		remove_handler(self.id, &self.function).unwrap();
 	}
 }

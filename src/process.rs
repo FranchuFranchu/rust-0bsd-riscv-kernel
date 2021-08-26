@@ -1,6 +1,6 @@
 use core::{pin::Pin, future::Future};
 use alloc::{boxed::Box, collections::{BTreeMap}, sync::{Arc, Weak}, vec::Vec};
-use spin::{RwLock};
+use crate::lock::shared::{RwLock};
 
 use core::task::{Waker, RawWaker, RawWakerVTable};
 use crate::{context_switch, cpu::{self, load_hartid, read_sscratch, write_sscratch}, hart::get_this_hart_meta, scheduler::schedule_next_slice, trap::{TrapFrame}};
@@ -135,7 +135,7 @@ impl Process {
 		use core::task::Poll;
 		let poll_result = future.poll(&mut core::task::Context::from_waker(&self.construct_waker()));
 		
-		if let Poll::Pending = poll_result {
+		if poll_result.is_pending() {
 			// Mark the task as yielded
 			// We'll be woken up eventually and this will be called again
 			self.state = ProcessState::Yielded;
@@ -254,9 +254,8 @@ pub fn new_supervisor_process_argument(function: fn(usize), a0: usize) -> usize 
 pub fn delete_process(pid: usize) {
 	// If our trap frame is the same one as the process's trap frame,
 	// change sscratch to use the boot trap frame
-	// (since the current sscratch is held by PROCESSES and will deallocated)
+	// (since the current sscratch is held by the Process struct and will deallocated soon)
 	if core::ptr::eq(read_sscratch(), &*try_get_process(&pid).read().trap_frame) {
-		warn!("resetting trap frame");
 		unsafe { write_sscratch(&*get_this_hart_meta().unwrap().boot_frame as *const TrapFrame as usize) }
 	}
 	

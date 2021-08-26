@@ -14,6 +14,8 @@ Files not made by me (and possibly not 0BSD-licensed) are src/asm/trap.S and src
 - [X] Refactor VirtioDevice interrupt API, so that instead of calling <interrupt handler> -> <VirtioDeviceType> -> <VirtioDevice> -> <Waker> -> <VirtioDeviceType>, it skips the first VirtioDeviceType step
 - [ ] Fix the changed_queue mess when VirtioDevice is used as a Future
 - [X] Fix bug where process trap frame would still be used after removing the process. This doesn't cause bugs until new allocations are made. (use-after-free)
+- [ ] Make the future.rs executor code cleaner
+- [ ] Kernel locks for kernel interrupt contexts, mixed contexts, and thread contexts
 
 ## Some explanations for parts of the code
 

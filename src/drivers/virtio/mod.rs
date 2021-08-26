@@ -19,7 +19,7 @@ use alloc::{
 
 use itertools::Itertools;
 use volatile_register::{RW, RO, WO};
-use spin::Mutex;
+use crate::lock::shared::Mutex;
 use crate::paging::PAGE_ALIGN;
 
 use self::block::VirtioBlockDevice;
@@ -383,6 +383,11 @@ impl SplitVirtqueue {
 }
 
 
+pub enum VirtioDriver {
+	Block(Arc<Mutex<VirtioBlockDevice>>),
+}
+
+
 use core::task::Poll;
 impl Future for VirtioDevice {
 	type Output = u16;
@@ -499,13 +504,13 @@ impl VirtioDevice {
 	
 	
 	/// moves self into a driver
-	pub fn make_driver(this: Arc<Mutex<Self>>) -> Option<Arc<Mutex<dyn VirtioDeviceType + Send + Sync>>> {
+	pub fn make_driver(this: Arc<Mutex<Self>>) -> Option<VirtioDriver> {
 		let id = unsafe { (*this.lock().configuration).device_id.read() };
 		match id {
 		    2 => { // Block device 
 		    	VirtioBlockDevice::negotiate_features(&mut this.lock());
 		    	let dev = VirtioBlockDevice::configure(this).unwrap();
-		    	Some(dev)
+		    	Some(VirtioDriver::Block(dev))
 		    },
 		    _ => {
 		    	warn!("Unknown/Unimplemented VirtIO device type: {}", unsafe { (*this.lock().configuration).device_id.read() });

@@ -1,4 +1,4 @@
-use spin::Mutex;
+use crate::lock::shared::Mutex;
 
 // from osblog
 

@@ -6,7 +6,7 @@ use itertools::Itertools;
 use alloc::{collections::{BTreeMap, VecDeque}, format, string::String};
 use cstr_core::CStr;
 use alloc::borrow::ToOwned;
-use spin::RwLock;
+use crate::lock::shared::RwLock;
 
 use crate::alloc::string::ToString;
 
@@ -25,7 +25,7 @@ pub struct Node {
 	
 	/// This holds an arbitrary datatype which is the representation of this type in the kernel
 	/// This can (and is) used to own objects with functions that are called on interrupts
-	pub kernel_struct: RwLock<Option<alloc::boxed::Box<dyn Any>>>,
+	pub kernel_struct: RwLock<Option<alloc::boxed::Box<dyn Any + Send>>>,
 }
 impl Node {
 	pub fn new(token_name: &'static str) -> Self {

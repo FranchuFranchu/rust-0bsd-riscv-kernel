@@ -136,8 +136,6 @@ pub unsafe extern "C"  fn trap_handler(
 				external_interrupt::external_interrupt(interrupt_id);
 				
 				meta.plic.complete(interrupt_id);
-				
-				println!("{:?}", "end");
 			}
 			_ => {
 				debug!("Unknown interrupt {}", cause);

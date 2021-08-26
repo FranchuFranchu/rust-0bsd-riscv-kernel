@@ -3,7 +3,7 @@ use alloc::collections::{BinaryHeap, BTreeMap};
 
 
 
-use spin::RwLock;
+use crate::lock::shared::RwLock;
 
 use crate::cpu::load_hartid;
 use crate::{sbi};

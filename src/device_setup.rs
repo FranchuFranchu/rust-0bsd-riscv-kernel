@@ -28,7 +28,7 @@ pub fn setup_devices() {
 						// First, congigure the virtio device
 						virtio_device.configure();
 						// Put the device inside an Arc-Mutex
-						let virtio_device = Arc::new(spin::Mutex::new(virtio_device));
+						let virtio_device = Arc::new(crate::lock::shared::Mutex::new(virtio_device));
 						
 						// If this device has interrupts, register a handle
 						
@@ -36,7 +36,6 @@ pub fn setup_devices() {
 						if let Some(PropertyValue::u32(interrupt_id)) = node.properties.get("interrupts") {
 							let virtio_device = virtio_device.clone();
 							handler = Some(ExternalInterruptHandler::new((*interrupt_id).try_into().unwrap(), alloc::sync::Arc::new(move |id| {
-								println!("{:?}", "lock");
 								VirtioDevice::on_interrupt(&*virtio_device);
 							})));
 						} else {
@@ -51,13 +50,8 @@ pub fn setup_devices() {
 							return;
 						}
 						
-						let virtio_driver = Arc::new(virtio_driver);
-						
-						
-						
 						
 						*node.kernel_struct.write() = Some(alloc::boxed::Box::new((virtio_driver, handler)));
-						println!("{:?}", "written");
 					}
 					/*
 					VirtioBlockDevice::negotiate_features(&mut virtio);

@@ -128,7 +128,7 @@ impl LinkedListAllocator {
     }
 
 }
-use spin::{Mutex, MutexGuard};
+use crate::lock::shared::{Mutex, MutexGuard};
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr;
 

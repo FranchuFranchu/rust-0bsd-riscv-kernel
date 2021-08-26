@@ -2,7 +2,7 @@
 
 use alloc::{collections::BTreeMap, sync::Arc, boxed::{Box}};
 use core::{pin::Pin, sync::atomic::AtomicBool};
-use spin::{RwLock};
+use crate::lock::shared::{RwLock};
 use aligned::{A16, Aligned};
 
 use crate::{cpu::{self, load_hartid}, plic::Plic0, process::{self, TASK_STACK_SIZE}, s_trap_vector, sbi, scheduler::schedule_next_slice, timer_queue, trap::TrapFrame};

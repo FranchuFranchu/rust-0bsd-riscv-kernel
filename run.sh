@@ -5,9 +5,9 @@ if [ `cat drive.img` != "" ]; then
 fi
 
 if [ $GDB == "yes" ]; then
-	lxterminal -e 'riscv64-elf-gdb target/riscv64gc-unknown-none-elf/debug/rust-kernel-test\
+	lxterminal -e 'riscv64-elf-gdb target/riscv64gc-unknown-none-elf/debug/rust_0bsd_riscv_kernel\
 	-ex "target remote localhost:1234"\
-	-ex "break rust_kernel_test::panic"
+	-ex "break rust_0bsd_riscv_kernel::panic"
 	'
 	export QEMUOPTS=-s $QEMUOPTS
 fi

@@ -114,6 +114,13 @@ pub fn read_sip() -> usize {
 }
 
 #[inline(always)]
+pub fn read_sie() -> usize {
+	let value: usize;
+	unsafe { llvm_asm!("csrr $0, sie" : "=r"(value) ::: "volatile") };
+	value
+}
+
+#[inline(always)]
 pub fn read_sstatus() -> usize {
 	let value: usize;
 	unsafe { llvm_asm!("csrr $0, sstatus" : "=r"(value) ::: "volatile") };

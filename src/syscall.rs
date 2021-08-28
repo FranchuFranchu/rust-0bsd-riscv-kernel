@@ -57,10 +57,10 @@ pub fn do_syscall(frame: *mut TrapFrame) {
             syscall_yield(frame);
         },
         Unknown => {
-            debug!("Unknown syscall{:?}", frame.general_registers[Registers::A7.idx()]);
+            warn!("Unknown syscall {:?}", frame.general_registers[Registers::A7.idx()]);
         },
         _ => {
-            debug!("Unimplemented syscall {:?}", number);
+            warn!("Unimplemented syscall {:?}", number);
         }
     }
 }
@@ -75,4 +75,9 @@ pub fn syscall_yield(frame: &mut TrapFrame) {
     process::try_get_process(&frame.pid).write().state = ProcessState::Yielded;
     // Immediately cause a context switch for this hart
     context_switch::schedule_and_switch();
+}
+
+#[no_mangle]
+pub extern "C" fn syscall_on_interrupt_disabled() {
+    error!("Can't make a syscall while interrupts are disabled! (Maybe you're holding a lock while making a syscall?)")
 }

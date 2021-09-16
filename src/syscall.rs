@@ -1,6 +1,6 @@
 use num_enum::{FromPrimitive, IntoPrimitive};
 
-use crate::{context_switch, cpu::Registers, process::{self, ProcessState}, trap::TrapFrame};
+use crate::{context_switch, cpu::Registers, process::{self, ProcessState, try_get_process}, trap::TrapFrame};
 
 #[repr(usize)]
 #[derive(IntoPrimitive, FromPrimitive)]
@@ -71,13 +71,26 @@ pub fn syscall_exit(frame: &mut TrapFrame, return_code: usize) {
 }
 
 pub fn syscall_yield(frame: &mut TrapFrame) {
+    
+    
+    frame.pc += 4;
     // Set this process's state to yielded
-    process::try_get_process(&frame.pid).write().state = ProcessState::Yielded;
-    // Immediately cause a context switch for this hart
-    context_switch::schedule_and_switch();
+    let mut p = process::try_get_process(&frame.pid);
+    let mut guard = p.write();
+    if guard.try_yield_maybe() {
+        crate::trap::use_boot_frame_if_necessary(&*guard.trap_frame as _);
+    }
+    if guard.yield_maybe() {
+        // If a hart switches to this process before we switch to another one, our trap frame would get corrupted
+        drop(guard);
+        drop(p);
+        context_switch::schedule_and_switch();
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn syscall_on_interrupt_disabled() {
-    error!("Can't make a syscall while interrupts are disabled! (Maybe you're holding a lock while making a syscall?)")
+    
+    error!("Can't make a syscall while interrupts are disabled! (Maybe you're holding a lock while making a syscall?)");
+    loop {};
 }

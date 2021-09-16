@@ -33,24 +33,24 @@ pub unsafe fn add_boot_hart(trap_frame: TrapFrame) {
 		is_panicking: AtomicBool::new(false)
 	};
 	HART_META.write().insert(load_hartid(), Arc::new(meta));
-	println!("{:?}", "test");
 }
 
 
 /// Must be run from a recently created hart
 pub fn add_this_secondary_hart(hartid: usize, interrupt_sp: usize) {
 	// Create the trap frame
-	let mut trap_frame = Pin::new(Box::new(TrapFrame::zeroed()));
+	let mut trap_frame = Pin::new(Box::new(TrapFrame::zeroed_interrupt_context()));
 	
-	trap_frame.pid = process::allocate_pid();
+	trap_frame.pid = 0;
 	trap_frame.hartid = hartid;
 	trap_frame.interrupt_stack = interrupt_sp;
-	
 	
 	// SAFETY: trap_frame is a valid trap frame and will live as long as this hart exists
 	// so sscratch will be valid and this will not invoke UB
 	unsafe { cpu::write_sscratch(Pin::as_ref(&trap_frame).get_ref() as *const TrapFrame as usize) };
 	
+	// Now that we have a valid, working trap frame, we can run process::allocate_pid
+	trap_frame.pid = process::allocate_pid();
 	
 	HART_META.write().insert(load_hartid(), Arc::new(HartMeta { 
 		plic: Plic0::new_with_fdt(), 
@@ -58,6 +58,7 @@ pub fn add_this_secondary_hart(hartid: usize, interrupt_sp: usize) {
 		boot_frame: trap_frame,
 		is_panicking: AtomicBool::new(false),
 	}));
+	
 }
 
 pub fn get_this_hart_meta() -> Option<Arc<HartMeta>> {
@@ -88,9 +89,8 @@ pub unsafe fn start_all_harts(start_addr: usize) {
 
 #[no_mangle]
 fn hart_entry(hartid: usize, interrupt_stack: usize) -> ! {
+	
 	add_this_secondary_hart(hartid, interrupt_stack);
-	
-	
 	
 	timer_queue::init_hart();
 	

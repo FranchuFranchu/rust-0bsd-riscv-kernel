@@ -45,9 +45,10 @@ pub struct Ns16550a {
 
 use core::fmt;
 
+use crate::trap::in_interrupt_context;
+
 impl fmt::Write for Ns16550a {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-		let lock = crate::std_macros::OUTPUT_LOCK.lock();
     	for byte in s.as_bytes() {
     		self.put(*byte)
     	}

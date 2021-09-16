@@ -1,4 +1,5 @@
-.set REG_SIZE, 8   # Register size (in bytes)
+.set XLEN, 8   # Register size (in bytes)
+.global XLEN
 
 # To make this file compatible with both rv32 and rv64
 # Store XLEN bytes

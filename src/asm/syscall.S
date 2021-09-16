@@ -1,3 +1,7 @@
+.global this_hart_lock_count_2
+this_hart_lock_count_2:
+	j this_hart_lock_count
+
 .global do_supervisor_syscall
 do_supervisor_syscall:
 	addi sp, sp, -16
@@ -19,7 +23,11 @@ do_supervisor_syscall:
 	csrr t0, sip
 	ori t0, t0, 1 << 1
 	csrw sip, t0
+	wfi
 	
+	
+
+do_supervisor_syscall_end:
 	lx ra, (sp)
 	addi sp, sp, 16
 	ret
@@ -30,3 +38,5 @@ do_supervisor_syscall:
 	lx ra, (sp)
 	addi sp, sp, 16
 	ret
+	
+.global do_supervisor_syscall_end

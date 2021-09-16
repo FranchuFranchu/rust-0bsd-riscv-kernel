@@ -144,9 +144,15 @@ trap_exit:
 
 .global switch_to_supervisor_frame	
 switch_to_supervisor_frame:
+	// Load the trap frame
 	csrw sscratch, a0
+	// When SRET is executed, set PC to the old PC
 	lx t0, XLEN*32(a0)
 	csrw sepc, t0
+	// If this process got interrupted, it means interrupts were enabled
+	li t0, 0x222
+	csrw sie, t0
+	
 	restore_volatile_registers
 .global switch_to_supervisor_frame_end
 switch_to_supervisor_frame_end:

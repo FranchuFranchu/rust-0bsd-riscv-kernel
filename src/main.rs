@@ -51,7 +51,7 @@ extern "C" {
 // The boot frame is the frame that is active in the boot thread
 // It needs to be statically allocated because it has to be there before
 // memory allocation is up and running
-static mut BOOT_FRAME: trap::TrapFrame = trap::TrapFrame::zeroed();
+static mut BOOT_FRAME: trap::TrapFrame = trap::TrapFrame::zeroed_interrupt_context();
 
 /// Macro imports
 
@@ -132,6 +132,11 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	plic.set_enabled(8, true);
 	plic.set_priority(8, 3);
 	
+	//crate::fdt::root().read().pretty(0);
+	
+	timer_queue::init();
+	timer_queue::init_hart();
+	
 	
 	
 	// Finally, enable interrupts in the cpu level
@@ -146,17 +151,10 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 		sstatus |= 1 << 1;
 		llvm_asm!("csrw sstatus, $0" :: "r"(sstatus));
 	}
-	process::new_supervisor_process(device_setup::setup_devices);
+	use alloc::borrow::ToOwned;
+	process::new_supervisor_process_with_name(test_task::test_task_3, "disk-test".to_owned());
+	process::new_supervisor_process_with_name(device_setup::setup_devices, "setup-devices".to_owned());
 	
-	
-	// process::new_supervisor_process(test_task::test_task);
-	// process::new_supervisor_process(test_task::test_task_2);
-	process::new_supervisor_process(test_task::test_task_3);
-	process::new_supervisor_process(process::idle_entry_point);
-	
-	
-	timer_queue::init();
-	timer_queue::init_hart();
 	
 	
 	unsafe { hart::start_all_harts(new_hart as usize) };
@@ -175,12 +173,16 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-	
-	println!("{:?}", info.message());
+	if unsafe { read_sscratch().as_ref().unwrap().is_double_faulting() } {
+		use core::fmt::Write;
+		write!(unsafe {crate::drivers::uart::Uart::new(0x1000_0000)}, "\n\x1b[1;31mDouble fault, hart {}\x1b[0m\n", load_hartid());
+		loop {};
+	}
     // Disable ALL interrupts
     unsafe { 
 		cpu::write_sie(0);
 	}
+	println!("{:?}", info.message());
 	
 	if let Some(meta) = get_hart_meta(load_hartid()) {
 		if meta.is_panicking.load(Ordering::Relaxed) {

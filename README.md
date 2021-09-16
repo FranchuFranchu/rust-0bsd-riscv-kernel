@@ -4,6 +4,8 @@ Mostly 0BSD-licensed `RV64GC` and `RV32IMAC` Rust kernel for Qemu's `virt` machi
 
 Files not made by me (and possibly not 0BSD-licensed) are `src/asm/trap.S` and `src/allocator/linkedlist.rs`
 
+Stop QEMU with Ctrl-A and then X
+
 ## Todo
 
 - [X] Fix issue with stack overflows overwriting trap frames in tasks (fixed by enlarging task stack)

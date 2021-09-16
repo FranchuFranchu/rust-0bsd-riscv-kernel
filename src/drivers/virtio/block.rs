@@ -87,8 +87,9 @@ impl Future for BlockRequestFuture {
 			
 			// Release lock to prevent deadlocks
 			drop(device);
-			// Now, tell the device that we're ready for a request
 			self.device.upgrade().unwrap().lock().begin_request(&self.descriptor_id.unwrap());
+			
+			println!("{:?}", self.buffer);
 			
 			Poll::Pending
 		}

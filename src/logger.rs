@@ -1,8 +1,10 @@
 use log::{Record, Level, Metadata};
+use crate::{lock::shared::Mutex, trap::in_interrupt_context};
 
 
-
-pub struct ColorfulLogger;
+pub struct ColorfulLogger {
+	lock: Mutex<()>
+}
 
 impl log::Log for ColorfulLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
@@ -29,11 +31,16 @@ impl log::Log for ColorfulLogger {
 			    }
         	};
         	
-            println!("{} [{}] {}", record.module_path().unwrap_or(""), prefix, record.args());
+        	let guard = if !in_interrupt_context() {
+    			Some(self.lock.lock())
+        	} else {
+        		None
+        	};
+        	println!("{} [{}] {}", &record.module_path().unwrap_or("")["rust_0bsd_riscv_kernel".len()..], prefix, record.args());
         }
     }
 
     fn flush(&self) {}
 }
 
-pub static KERNEL_LOGGER: ColorfulLogger = ColorfulLogger;
+pub static KERNEL_LOGGER: ColorfulLogger = ColorfulLogger { lock: Mutex::new(()) } ;

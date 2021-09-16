@@ -25,23 +25,21 @@ unsafe impl RawMutex for RawSpinlock {
         // when called in a loop.
         
         #[cfg(debug_assertions)] if self.locked.load(Ordering::Acquire) {
-            if self.locker_hartid.load(Ordering::Relaxed) == load_hartid() {
-                warn!("Hart number {} tried locking the same lock twice! (Maybe you're holding a lock a function you're calling needs, or you're waking up a future which uses a lock you're holding)", self.locker_hartid.load(Ordering::Relaxed));
+            if self.locker_hartid.load(Ordering::Acquire) == load_hartid() {
+                // TODO warn about this somehow
+                // warn!("Hart number {} tried locking the same lock twice! (Maybe you're holding a lock a function you're calling needs, or you're waking up a future which uses a lock you're holding)", self.locker_hartid.load(Ordering::Relaxed));
             }
         }
-        while self.locked.compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
-            // Wait until the lock looks unlocked before retrying
-            while self.locked.load(Ordering::Relaxed) == true {
-                core::hint::spin_loop();
-            }
+        while self.try_lock() == false {
+            core::hint::spin_loop()
         }
-        self.locker_hartid.store(load_hartid(), Ordering::Relaxed);
+        //self.locker_hartid.store(load_hartid(), Ordering::Relaxed);
     }
 
     fn try_lock(&self) -> bool {
-        self.locked
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_ok()
+        // If self.locked is false, then set it to true and return Ok which gets turned to true in the return value
+        // If self.locked is true, then return Err which gets turned to false in the return value
+        self.locked.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_ok()
     }
 
     unsafe fn unlock(&self) {

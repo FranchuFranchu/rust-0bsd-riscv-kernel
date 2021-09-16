@@ -1,11 +1,16 @@
 use core::{pin::Pin, future::Future};
+use core::sync::atomic::AtomicUsize;
 use alloc::{boxed::Box, collections::{BTreeMap}, sync::{Arc, Weak}, vec::Vec};
+use crate::asm::do_supervisor_syscall_0;
 use crate::lock::shared::{RwLock};
+use crate::syscall::syscall_exit;
+use crate::trap::use_boot_frame_if_necessary;
 
 use core::task::{Waker, RawWaker, RawWakerVTable};
 use crate::{context_switch, cpu::{self, load_hartid, read_sscratch, write_sscratch}, hart::get_this_hart_meta, scheduler::schedule_next_slice, trap::{TrapFrame}};
 use crate::cpu::Registers;
 use aligned::{A16, Aligned};
+use alloc::string::String;
 
 pub const TASK_STACK_SIZE: usize = 4096 * 8;
 pub const PROCESS_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
@@ -43,10 +48,12 @@ pub struct Process {
 	pub state: ProcessState,
 	pub file_descriptors: BTreeMap<usize, FileDescriptor>,
 	pub trap_frame: Pin<Box<TrapFrame>>,
+	pub name: Option<String>,
+	no_op_yield_count: AtomicUsize,
 	
 	/// For supervisor mode the kernel initially creates a small stack page for this process
 	/// This is where it's stored
-	pub kernel_allocated_stack: Option<Box<Aligned<A16, [u8; TASK_STACK_SIZE]>>>
+	pub kernel_allocated_stack: Option<Box<[u8; TASK_STACK_SIZE]>>
 }
 
 extern "C" {
@@ -82,15 +89,19 @@ impl Process {
 		// Use the same stack for interrupts
 		self.trap_frame.interrupt_stack = unsafe { (*read_sscratch()).interrupt_stack };
 		
+		
 		// Get a raw pointer to the Box's data (which is the trap frame)
 		let frame_pointer = Pin::as_ref(&self.trap_frame).get_ref() as *const TrapFrame as *mut TrapFrame;
 		
 		
-		debug!("Switch to frame at \x1b[32m{:?}\x1b[0m (PC {:x})", frame_pointer, unsafe {(*frame_pointer).pc});
+		info!("Switch to frame at \x1b[32m{:?}\x1b[0m (PC {:x} NAME {:?} HART {})", frame_pointer, unsafe {(*frame_pointer).pc}, self.name, self.trap_frame.hartid);
 		
+		info!("{:?}", PROCESSES.read().iter().filter(|(k, v)| **k != self.trap_frame.pid).map(|(k, v)| v.read().name.clone()).collect() : Vec<_>);
+		
+    
 		self.state = ProcessState::Running;
 		
-		crate::trap::clear_interrupt_context();
+		self.trap_frame.flags &= !1;
 		
 		// Switch to the trap frame
 		unsafe { switch_to_supervisor_frame(frame_pointer) };
@@ -112,7 +123,7 @@ impl Process {
 		// The box re-acquires ownership of the RwLock<Self>
 		let process: Box<Weak<RwLock<Self>>> = Box::from_raw(data as _);
 		let process_internal = process.upgrade().expect("Waited process is gone!");
-		process_internal.write().state = ProcessState::Pending;
+		process_internal.write().make_pending_when_possible();
 		// Make the box lose ownership of the RwLock<Self>
 		Box::leak(process);
 	}
@@ -120,6 +131,17 @@ impl Process {
 		// Re-create the box for this waker and then drop it to prevent memory leaks
 		drop(Box::from_raw(data as *mut Weak<RwLock<Self>>));
 	}
+	pub fn make_pending_when_possible(&mut self) {
+		match self.state {
+		    ProcessState::Yielded => {
+		    	self.state = ProcessState::Pending;
+		    },
+		    ProcessState::Pending | ProcessState::Running => {
+		    	self.no_op_yield_count.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+		    },
+		}
+	}
+	
 	
 	/// This creates a Waker that makes this process a Pending process when woken
 	/// The Pending process will be eventually scheduled
@@ -143,6 +165,21 @@ impl Process {
 		}
 		
 		poll_result
+	}
+	
+	pub fn yield_maybe(&mut self) -> bool {
+		if self.no_op_yield_count.load(core::sync::atomic::Ordering::Acquire) == 0 {
+			self.state = ProcessState::Yielded;
+			true
+		} else {
+			self.no_op_yield_count.fetch_sub(1, core::sync::atomic::Ordering::AcqRel);
+			false
+		}
+	}
+	
+	// Like yield_maybe, but does nothing and predicts the return value of yield_maybe
+	pub fn try_yield_maybe(&mut self) -> bool {
+		self.no_op_yield_count.load(core::sync::atomic::Ordering::Acquire) == 0
 	}
 	
 	pub fn this() -> Arc<RwLock<Process>> {
@@ -192,6 +229,8 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
 		trap_frame: trapframe_box,
 		state: ProcessState::Pending,
 		kernel_allocated_stack: None,
+		name: None,
+		no_op_yield_count: AtomicUsize::new(0),
 	};
 	
 	// Set the initial state for the process
@@ -209,6 +248,9 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
 	
 	
 	process.trap_frame.general_registers[Registers::Sp.idx()] = process_stack.as_ptr() as usize + TASK_STACK_SIZE - 0x10; 
+	
+	use core::convert::TryInto;
+	process.kernel_allocated_stack = Some(process_stack.try_into().expect("Process stack has incorrect length!"));
 	
 	// Wrap the process in a lock
 	let process = RwLock::new(process);
@@ -250,15 +292,19 @@ pub fn new_supervisor_process_argument(function: fn(usize), a0: usize) -> usize 
 	new_supervisor_process_int(function as usize, a0 )
 }
 
+pub fn new_supervisor_process_with_name(function: fn(), name: String) -> usize {
+	let pid = new_supervisor_process(function);
+	try_get_process(&pid).write().name = Some(name);
+	pid
+}
 
 pub fn delete_process(pid: usize) {
 	// If our trap frame is the same one as the process's trap frame,
 	// change sscratch to use the boot trap frame
 	// (since the current sscratch is held by the Process struct and will deallocated soon)
-	if core::ptr::eq(read_sscratch(), &*try_get_process(&pid).read().trap_frame) {
-		unsafe { write_sscratch(&*get_this_hart_meta().unwrap().boot_frame as *const TrapFrame as usize) }
-	}
-	
+	use_boot_frame_if_necessary(&*try_get_process(&pid).read().trap_frame as _);
+	// We don't need to remove from the sched queue here.
+	// That gets done on context switching
 	PROCESSES.write().remove(&pid);
 }
 
@@ -273,8 +319,20 @@ pub fn try_get_process(pid: &usize) -> Arc<RwLock<Process>>  {
 	PROCESSES.read().get(pid).unwrap().clone()
 }
 
+/// Gets the amount of processes that aren't idle processes and are still alive
+/// Right now the way that it checks for idle processes is that it checks if their name starts with "Idle"
+/// TODO use a better method
+pub fn useful_process_count() -> usize {
+    PROCESSES.read()
+    	.iter()
+    	.filter(|(k, v)| v.read().name.as_ref().map(|s| !s.starts_with("Idle ")).unwrap_or(false))
+    	.count()
+}
+
+
 pub fn idle_entry_point() {
 	cpu::wfi();
+	unsafe { do_supervisor_syscall_0(1) };
 }
 
 pub fn idle_forever_entry_point() {
@@ -286,7 +344,8 @@ pub fn idle_forever_entry_point() {
 /// Starts a process that wfi()s once, immediately switches to the process, then exits. 
 /// Must be called from an interrupt context.
 pub fn idle() -> ! {
-	let pid = new_supervisor_process(idle_entry_point);
+	use alloc::format;
+	let pid = new_supervisor_process_with_name(idle_entry_point, format!("Idle process for hart {}", load_hartid()));
 	schedule_next_slice(1);
 	context_switch::context_switch(&pid)
 }

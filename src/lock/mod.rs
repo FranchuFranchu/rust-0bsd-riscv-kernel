@@ -1,3 +1,6 @@
+// Needed because of the way lock-api works
+#![allow(clippy::declare_interior_mutable_const)]
+
 pub mod spin;
 pub mod shared;
 pub mod interrupt;

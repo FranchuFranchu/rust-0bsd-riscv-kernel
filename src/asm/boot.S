@@ -5,4 +5,8 @@ boot:
 	la sp, _stack_start
 	j main
 	
+.global ret_
+ret_:
+	ret
+	
 .section .text

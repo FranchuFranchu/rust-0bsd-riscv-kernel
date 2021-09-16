@@ -8,6 +8,8 @@ use core::pin::Pin;
 use alloc::{collections::BTreeSet, vec::Vec};
 
 
+use crate::asm::do_supervisor_syscall_0;
+use crate::cpu::read_sie;
 use crate::drivers::traits::block::GenericBlockDevice;
 use crate::drivers::virtio::VirtioDriver;
 use crate::drivers::virtio::block::VirtioBlockDevice;
@@ -86,6 +88,7 @@ pub fn test_task_2() {
 }
 
 pub fn test_task_3() {
+	
 {	
 	use crate::lock::shared::Mutex;
 	
@@ -101,8 +104,10 @@ pub fn test_task_3() {
 	use core::any::Any;
 	let exec = crate::future::Executor::new();
 	let block = async {
+		// First, wait until the device setup is done
+		crate::device_setup::is_done_future().await;
+		// Get the block device
 		use crate::drivers::traits::block::BlockDevice;
-		
 		let block_device: Arc<Mutex<VirtioBlockDevice>>;
 		{
 			let guard = fdt::root().read();
@@ -129,41 +134,40 @@ pub fn test_task_3() {
 		v[0] = 65;
 		v[1] = 67;
 		
-		println!("Write: {:?}", v);
-		
+		//println!("Write: {:?}", v);
 		
 		let request = block_device.lock().create_request(0, v.into_boxed_slice(), true);
 		
+		
 		let buf = request.await;
+		info!("Read {:?}", buf);
 		
 		let mut v: Vec<u8> = Vec::new();
 		v.resize(512, 0);
+		
 		
 		// Read the block again
 		let request = block_device.lock().create_request(0, v.into_boxed_slice(), false);
 		
 		let buf = request.await;
 		
-		
-		println!("Read: {:?}", buf);
-		
-		crate::sbi::shutdown(0);
+		//crate::sbi::shutdown(0);
 		
 		
 	};
 	let block = Box::pin(block);
-	let block = Box::new(block);
+	let mut block = Box::new(block);
 	use alloc::boxed::Box;
-	exec.push_future(block);
-	
+	//exec.push_future(block);
 	// TODO maybe use Some(task) in the future?
-	while let Some(None) = exec.run_one() {
-		
+	
+	let waker = crate::process::Process::this().read().construct_waker();
+	let mut context = Context::from_waker(&waker);
+	use core::future::Future;
+	while core::task::Poll::Pending == Pin::new(&mut block).poll(&mut context) {
+		unsafe { do_supervisor_syscall_0(2) };
 	}
-	println!("{:?}", "fini");
-	
-	
-	
+	info!("Ending");
 }
 
 #[inline]

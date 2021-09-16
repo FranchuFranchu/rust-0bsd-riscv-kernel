@@ -1,10 +1,10 @@
 use lock_api::{RawRwLock, GuardSend};
 use core::sync::atomic::{AtomicUsize, Ordering};
-
-use crate::trap::in_interrupt_context;
+use alloc::vec::Vec;
+use crate::{cpu::load_hartid, hart::HART_META, lock::shared::{lock_and_disable_interrupts, unlock_and_enable_interrupts_if_necessary}, trap::in_interrupt_context};
 
 pub use super::super::spin::RawRwLock as RawSpinRwLock;
-
+use super::super::spin::RwLock as SpinRwLock;
 
 pub struct RawSharedRwLock {
 	internal: RawSpinRwLock,
@@ -16,39 +16,45 @@ unsafe impl RawRwLock for RawSharedRwLock {
     type GuardMarker = GuardSend;
 
     fn lock_shared(&self) {
-        if !in_interrupt_context() {
-            unsafe { crate::cpu::write_sie(0) };
-        }
+        debug!("{} {:x} Lock shared", load_hartid(), (self as *const Self as usize) & 0xffffffff);
+        lock_and_disable_interrupts();
 		self.internal.lock_shared()
     }
 
     fn try_lock_shared(&self) -> bool {
-        self.internal.try_lock_shared()
+        if self.internal.try_lock_shared() {
+            lock_and_disable_interrupts();
+            true
+        } else {
+            false
+        }
     }
 
     unsafe fn unlock_shared(&self) {
+        debug!("{} {:x} Unlock shared", load_hartid(), (self as *const Self as usize) & 0xffffffff);
         self.internal.unlock_shared();
-        if !in_interrupt_context() {
-            unsafe { crate::cpu::write_sie(0x222) };
-        }
+        unlock_and_enable_interrupts_if_necessary();
     }
 
     fn lock_exclusive(&self) {
-        if !in_interrupt_context() {
-            unsafe { crate::cpu::write_sie(0) };
-        }
+        debug!("{} {:x} Lock exclusive {}", load_hartid(), (self as *const Self as usize) & 0xffffffff, self.internal.is_locked());
+        lock_and_disable_interrupts();
         self.internal.lock_exclusive()
     }
 
     fn try_lock_exclusive(&self) -> bool {
-        self.internal.try_lock_exclusive()
+        if self.internal.try_lock_exclusive() {
+            lock_and_disable_interrupts();
+            true
+        } else {
+            false
+        }
     }
 
     unsafe fn unlock_exclusive(&self) {
+        debug!("{} {:x} Unlock exclusive", load_hartid(), (self as *const Self as usize) & 0xffffffff);
         self.internal.unlock_exclusive();
-        if !in_interrupt_context() {
-            unsafe { crate::cpu::write_sie(0x222) };
-        }
+        unlock_and_enable_interrupts_if_necessary();
     }
 }
 

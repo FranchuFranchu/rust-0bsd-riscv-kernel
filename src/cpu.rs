@@ -91,7 +91,7 @@ pub unsafe fn write_sscratch(value: usize) {
 }
 
 
-#[inline(always)]
+#[inline]
 pub fn read_sscratch() -> *mut crate::trap::TrapFrame {
 	let value: usize;
 	unsafe { llvm_asm!("csrr $0, sscratch" : "=r"(value) ::: "volatile") };

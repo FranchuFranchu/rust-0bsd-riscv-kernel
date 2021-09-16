@@ -42,7 +42,7 @@ impl Ord for TimerEvent {
 	// add code here
 }
 
-pub static TIMER_QUEUE: RwLock<BTreeMap<usize, RwLock<BinaryHeap<TimerEvent>>>> = RwLock::new(BTreeMap::new());
+static TIMER_QUEUE: RwLock<BTreeMap<usize, RwLock<BinaryHeap<TimerEvent>>>> = RwLock::new(BTreeMap::new());
 
 pub fn init() {
 	
@@ -50,7 +50,9 @@ pub fn init() {
 
 /// Does initialization local to this hart
 pub fn init_hart() {
-	TIMER_QUEUE.write().insert(load_hartid(), RwLock::new(BinaryHeap::new()));
+	let mut l = TIMER_QUEUE.write();
+	let hid = load_hartid();
+	l.insert(hid, RwLock::new(BinaryHeap::new()));
 }
 
 // All functions below invoke UB if init() is not called
@@ -66,7 +68,7 @@ pub fn last_cause() -> TimerEvent {
 
 pub fn schedule_next() {
 	// Call SBI to schedule the next timer interrupt
-	let next_time = TIMER_QUEUE.read()[&load_hartid()].read().peek().expect("Deadlock: Timer queue was drained to zero This should never happen!").instant;
+	let next_time = TIMER_QUEUE.read().get(&load_hartid()).expect("Hartid queue not found!").read().peek().expect("Deadlock: Timer queue was drained to zero This should never happen!").instant;
 	// Note that the get_timer_queue().read() must be unlocked here
 	// because the timer interrupt might trigger immeditately
 	
@@ -74,5 +76,8 @@ pub fn schedule_next() {
 }
 
 pub fn schedule_at(event: TimerEvent) {
-	TIMER_QUEUE.read()[&load_hartid()].write().push(event)
+	let t = TIMER_QUEUE.read();
+	let e = t.get(&load_hartid()).expect("Hartid queue not found! (2)");
+	e.write().push(event);
+	drop(t);
 }

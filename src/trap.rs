@@ -1,4 +1,4 @@
-use crate::{context_switch, cpu::{self, load_hartid, read_sscratch}, external_interrupt, hart::get_this_hart_meta, interrupt_context_waker, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
+use crate::{context_switch, cpu::{self, Registers, load_hartid, read_sscratch}, external_interrupt, hart::get_this_hart_meta, interrupt_context_waker, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
 
 /// A pointer to this struct is placed in sscratch
 #[derive(Default, Debug, Clone)] // No copy because they really shouldn't be copied and used without changing the PID
@@ -16,6 +16,9 @@ pub struct TrapFrame {
 impl TrapFrame {
 	pub const fn zeroed() -> Self {
 		Self { general_registers: [0; 32], hartid: 0, pid: 0, pc: 0, interrupt_stack: 0, flags: 0}
+	}
+	pub const fn zeroed_interrupt_context() -> Self {
+		Self { general_registers: [0; 32], hartid: 0, pid: 0, pc: 0, interrupt_stack: 0, flags: 1}
 	}
 	// Inherit hartid, interrupt_stack, and flags from the other trap frame
 	pub fn inherit_from(&mut self, other: &TrapFrame) -> &mut TrapFrame {
@@ -36,7 +39,31 @@ impl TrapFrame {
 	pub fn is_interrupt_context(&self) -> bool {
 		self.flags & 1 != 0
 	}
+	pub fn has_trapped_before(&self) -> bool {
+		self.flags & 2 != 0
+	}
+	pub fn is_double_faulting(&self) -> bool {
+		self.flags & 4 != 0
+	}
+	pub fn set_trapped_before(&mut self) {
+		self.flags |= 2
+	}
+	pub fn set_double_faulting(&mut self) {
+		self.flags |= 4
+	}
+	pub unsafe fn make_current(&self) {
+		cpu::write_sscratch(self as *const TrapFrame as usize)
+	}
 }
+
+/// If sscratch equals original_trap_frame, then set sscratch to the boot frame for this hart
+pub fn use_boot_frame_if_necessary(original_trap_frame: *const TrapFrame) {
+	if core::ptr::eq(read_sscratch(), original_trap_frame) {
+		unsafe { get_this_hart_meta().unwrap().boot_frame.make_current() };
+	}
+}
+
+
 
 impl Drop for TrapFrame {
 	fn drop(&mut self) {
@@ -75,11 +102,21 @@ pub unsafe extern "C"  fn trap_handler(
 	sstatus: usize,
 	frame: *mut TrapFrame,
 ) -> usize {
-	set_interrupt_context();
 	let is_interrupt = (cause & (usize::MAX / 2 + 1)) != 0;
 	let cause = cause & 0xFFF;
+	
+	// If this is not the first trap and we're in an interrupt context, then it means this is a double fault
+	// A double fault is when the fault handler faults
+	if !is_interrupt && in_interrupt_context() && read_sscratch().as_ref().unwrap().has_trapped_before() {
+		read_sscratch().as_mut().unwrap().set_double_faulting();
+		panic!("Double fault");
+	}
+	read_sscratch().as_mut().unwrap().set_trapped_before();
+	
+	set_interrupt_context();
 	debug!("Trap from PID {:x}", unsafe { (*frame).pid });
 	debug!("\x1b[1;35mV ENTER TRAP\x1b[0m");
+	
 	
 	
 	interrupt_context_waker::wake_all();
@@ -119,7 +156,8 @@ pub unsafe extern "C"  fn trap_handler(
 						timer_queue::schedule_next();
 						
 						context_switch::make_this_process_pending();
-						debug!("\x1b[1;36m^ RUN TRAP\x1b[0m");
+						
+						unsafe { get_this_hart_meta().unwrap().boot_frame.make_current() };
 						
 						context_switch::schedule_and_switch();
 					},
@@ -128,14 +166,18 @@ pub unsafe extern "C"  fn trap_handler(
 			}
 			// Supervisor external interrupt
 			9 => {
-				info!("Extenral interrupt");
 				// Assume it's because of the PLIC0
 				let meta = get_this_hart_meta().unwrap();
 				let interrupt_id = meta.plic.claim_highest_priority();
 				
+				info!("Extenral interrupt {}", interrupt_id);
+				
 				external_interrupt::external_interrupt(interrupt_id);
 				
 				meta.plic.complete(interrupt_id);
+				
+				// Clear the SEIP bit
+				unsafe { cpu::write_sip(cpu::read_sip() & !(1 << 9)) };
 			}
 			_ => {
 				debug!("Unknown interrupt {}", cause);
@@ -148,13 +190,13 @@ pub unsafe extern "C"  fn trap_handler(
 				loop {};
 			},
 			_ => {
+				info!("{}", "test");
 				info!("Error with cause: {:?} pc: {:X} *pc: {:X}", cause, unsafe { (*frame).pc }, unsafe { *((*frame).pc as *const u32)});
 				loop {} //panic!("Non-interrupt trap");
 			}
 		}
 	}
 	interrupt_context_waker::wake_all();
-	
 	
 	debug!("\x1b[1;36m^ EXIT TRAP {}\x1b[0m", load_hartid());
 	clear_interrupt_context();

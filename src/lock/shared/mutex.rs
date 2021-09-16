@@ -4,6 +4,7 @@ use core::sync::atomic::{AtomicBool, Ordering, AtomicUsize};
 use crate::{cpu::load_hartid, trap::in_interrupt_context};
 
 pub use super::super::spin::RawMutex as RawSpinlock;
+use super::{lock_and_disable_interrupts, unlock_and_enable_interrupts_if_necessary};
 
 pub const NO_HART: usize = usize::MAX;
 
@@ -21,22 +22,22 @@ unsafe impl RawMutex for RawSharedLock {
     type GuardMarker = GuardSend;
 
     fn lock(&self) {
-        if !in_interrupt_context() {
-            self.old_sie.store(crate::cpu::read_sie(), Ordering::Release);
-            unsafe { crate::cpu::write_sie(0) };
-        }
+        lock_and_disable_interrupts();
         self.internal.lock()
     }
 
     fn try_lock(&self) -> bool {
-        self.internal.try_lock()
+        if self.internal.try_lock() {
+            lock_and_disable_interrupts();
+            true
+        } else {
+            false
+        }
     }
 
     unsafe fn unlock(&self) {
         self.internal.unlock();
-        if !in_interrupt_context() {
-            unsafe { crate::cpu::write_sie(0x222) };
-        }
+        unlock_and_enable_interrupts_if_necessary();
     }
 }
 

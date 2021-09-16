@@ -1,14 +1,78 @@
 use core::convert::TryInto;
+use core::future::Future;
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::Ordering;
+use core::ops::Deref;
 
 use crate::{ drivers::virtio, drivers::virtio::{block::VirtioBlockDevice, VirtioDeviceType, VirtioDevice}, external_interrupt::ExternalInterruptHandler, fdt::PropertyValue};
+use alloc::{vec::Vec, sync::Arc};
+use core::task::Waker;
+use crate::lock::shared::{RwLock, Mutex};
+use core::task::Poll;
+
+pub struct DeviceSetupDoneFuture {
+	wakers: Mutex<Vec<Waker>>,
+	is_done: AtomicBool,
+}
+
+#[derive(Clone)]
+pub struct DeviceSetupDoneFutureShared(Arc<DeviceSetupDoneFuture>);
+
+
+impl Deref for DeviceSetupDoneFutureShared {
+	type Target = DeviceSetupDoneFuture;
+	
+	fn deref(&self) -> &Self::Target {
+	    self.0.deref()
+	}
+}
+
+impl Future for DeviceSetupDoneFutureShared {
+    type Output = ();
+
+    fn poll(self: core::pin::Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
+        if self.0.is_done.load(Ordering::Acquire) {
+        	Poll::Ready(())
+        } else {
+        	self.0.wakers.lock().push(cx.waker().clone());
+        	Poll::Pending
+        }
+    }
+}
+
+impl DeviceSetupDoneFuture {
+	fn wake(&self) {
+		self.is_done.store(true, Ordering::Release);
+		while let Some(waker) = self.wakers.lock().pop() {
+			waker.wake()
+		}
+	}
+}
+
+static IS_DONE: RwLock<Option<DeviceSetupDoneFutureShared>> = RwLock::new(None);
+
+pub fn is_done_future() -> DeviceSetupDoneFutureShared {
+	let mut lock = IS_DONE.write();
+	match &mut *lock {
+		Some(expr) => {
+			expr.clone()
+		},
+		None => {
+			let t = DeviceSetupDoneFutureShared(Arc::new(DeviceSetupDoneFuture {
+				wakers: Mutex::new(Vec::new()),
+				is_done: AtomicBool::new(false)
+			}));
+			*lock = Some(t.clone());
+			t
+		},
+	}
+}
 
 
 /// This functions scans the device tree
 /// and sets up devices and interrupt handlers for all devices
 pub fn setup_devices() {
-	// Create the 	virtio device
-
-	crate::fdt::root().read().pretty(0);
+	//crate::fdt::root().read().pretty(0);
 	
 	let lock = crate::fdt::root().read();
 	lock.walk_nonstatic(&mut |node: &crate::fdt::Node| {
@@ -53,10 +117,6 @@ pub fn setup_devices() {
 						
 						*node.kernel_struct.write() = Some(alloc::boxed::Box::new((virtio_driver, handler)));
 					}
-					/*
-					VirtioBlockDevice::negotiate_features(&mut virtio);
-					VirtioBlockDevice::configure(virtio);
-					*/
 				},
 				&"ns16550a" => {
 					// Create UART device
@@ -76,9 +136,13 @@ pub fn setup_devices() {
 	
 	let handler2 = ExternalInterruptHandler::new(10, alloc::sync::Arc::new(|id| {
 		let c = unsafe { crate::drivers::uart::Uart::new(0x10000000) }.get().unwrap();
-		print!("{}", c)
+		print!("C {}", c)
 	}));
 	
+
+	info!("Finished device setup");
+	
+	is_done_future().wake();
 	
 	// Exit from this processs
 	unsafe { crate::asm::do_supervisor_syscall_0(1) };

@@ -22,11 +22,13 @@ struct TaskWaker(Weak<Executor>, Weak<Task>);
 pub struct Task {
     future: Mutex<Box<dyn Future<Output = ()> + Send + Unpin>>,
     waker: Mutex<Option<Waker>>,
+    process_waker: Waker,
 }
 
 impl Wake for TaskWaker {
 	fn wake(self: Arc<Self>) {
-		self.0.upgrade().unwrap().push_task(self.1.upgrade().unwrap())
+		self.0.upgrade().unwrap().push_task(self.1.upgrade().unwrap());
+		self.1.upgrade().unwrap().process_waker.wake_by_ref();
 	}
 }
 
@@ -57,6 +59,7 @@ impl Executor {
 		let task = Task {
 			future: Mutex::new(future),
 			waker: Mutex::new(None),
+			process_waker: crate::process::Process::this().read().construct_waker()
 		};
 		let task = Arc::new(task);
 		*task.waker.lock() = Some(Arc::new(TaskWaker(self.this.lock().clone(), Arc::downgrade(&task))).into());
@@ -65,6 +68,7 @@ impl Executor {
 	pub fn run_one(&self) -> Option<Option<Arc<Task>>> {
 		let task = self.queue.lock().pop_front();
 		
+		
 		let task = if let Some(task) = task {
 			task
 		} else {
@@ -72,6 +76,7 @@ impl Executor {
 		};
 		
 		
+		info!("Exec {:?}", Arc::as_ref(&task) as *const _);
 		
 		use core::task::Poll;
 		
@@ -83,7 +88,8 @@ impl Executor {
 			let mut guard = task.future.lock();
 			
 			let mut future = &mut *guard;
-			core::pin::Pin::new(future).poll(&mut context)
+			let t = core::pin::Pin::new(future).poll(&mut context);
+			t
 		};
 		
 		

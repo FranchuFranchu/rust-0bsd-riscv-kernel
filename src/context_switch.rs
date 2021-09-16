@@ -20,7 +20,6 @@ pub fn context_switch(pid: &usize) -> ! {
 
 	let mut guard = lock.write();
 	
-	
 	// Unlock the write lock
 	unsafe { lock.force_unlock_write() };
 	// Decrement the Arc refcount
@@ -50,7 +49,7 @@ pub fn schedule_and_switch() -> !  {
 	if new_pid == 0 {
 		// Nothing left to schedule
 		// Check if it's just that all processes have yielded or that they have been deleted
-		if process::PROCESS_SCHED_QUEUE.read().len() == 0 {
+		if process::useful_process_count() == 0 {
 			panic!("No processes alive, nothing left to schedule!");
 		} else {
 			// Just wait for something to happen.

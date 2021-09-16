@@ -15,6 +15,7 @@ aligned = "0.3"
 kernel_proc_macros = { path = "src/crates/kernel_proc_macros" }
 slab_allocator_rs = "1"
 zerocopy = "*"
+spin = {features = ["lock_api"]}
 # Nightly feature is to make Mutex::new() a const fn
 lock_api = {version = "0.4", features = ["nightly"]}
 

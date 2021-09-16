@@ -1,7 +1,7 @@
 use lock_api::{RawRwLock, GuardSend};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::trap::in_interrupt_context;
+use crate::{cpu::load_hartid, trap::in_interrupt_context};
 
 const SHARED: usize = 1 << 1;
 const WRITER: usize = 1 << 0;
@@ -17,39 +17,61 @@ unsafe impl RawRwLock for RawSpinRwLock {
     type GuardMarker = GuardSend;
 
     fn lock_shared(&self) {
-		while self.value.load(Ordering::Acquire) & WRITER != 0 {
-            while self.value.load(Ordering::Relaxed) & WRITER != 0 {
-                core::hint::spin_loop();
-            }
+        while self.try_lock_shared() == false {
         }
-        self.value.fetch_add(SHARED, Ordering::Release);
     }
 
     fn try_lock_shared(&self) -> bool {
-        self.value
-            .compare_exchange(0, 0, Ordering::Relaxed, Ordering::Relaxed)
-            .is_ok()
+        let mut outdated_value = self.value.load(Ordering::SeqCst);
+        if outdated_value & WRITER != 0 {
+            return false;
+        }
+        
+        while let Err(e) = self.value.compare_exchange(outdated_value, outdated_value + SHARED, Ordering::SeqCst, Ordering::SeqCst) {
+            outdated_value = self.value.load(Ordering::SeqCst);
+            if outdated_value & WRITER != 0 {
+                return false;
+            }
+        };
+        return true;
     }
 
     unsafe fn unlock_shared(&self) {
-        self.value.fetch_sub(SHARED, Ordering::Release);
+        if self.value.load(Ordering::SeqCst) == 0 {
+            loop {};
+        };
+        self.value.fetch_sub(SHARED, Ordering::SeqCst);
     }
 
     fn lock_exclusive(&self) {
-		while self.value.load(Ordering::Acquire) != 0 {
-            while self.value.load(Ordering::Relaxed) != 0 {
-                core::hint::spin_loop();
-            }
+        while self.try_lock_exclusive() == false {
         }
-        self.value.fetch_add(WRITER, Ordering::Release);
     }
 
     fn try_lock_exclusive(&self) -> bool {
-        self.value.load(Ordering::Relaxed) == 0
+        let mut outdated_value = self.value.load(Ordering::SeqCst);
+        if outdated_value != 0 {
+            return false;
+        }
+        
+        while let Err(e) = self.value.compare_exchange(outdated_value, outdated_value + WRITER, Ordering::SeqCst, Ordering::SeqCst) {
+            outdated_value = self.value.load(Ordering::SeqCst);
+            if outdated_value != 0 {
+                return false;
+            }
+        };
+        return true;
     }
 
     unsafe fn unlock_exclusive(&self) {
-        self.value.fetch_sub(WRITER, Ordering::Release);
+        if self.value.load(Ordering::SeqCst) == 0 {
+            loop {};
+        };
+        self.value.fetch_sub(WRITER, Ordering::SeqCst);
+    }
+    
+    fn is_locked(&self) -> bool {
+        return self.value.load(Ordering::SeqCst) != 0
     }
 }
 

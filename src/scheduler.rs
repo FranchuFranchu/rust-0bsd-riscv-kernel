@@ -23,6 +23,7 @@ pub fn schedule() -> usize {
 				if lock.can_be_scheduled() {
 					pid = lock.trap_frame.pid;
 					// TODO maybe add a way to "reserve" this process to make it so that it doesn't execute?
+					lock.state = ProcessState::Scheduled;
 					break;
 				}
 			},

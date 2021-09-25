@@ -27,10 +27,13 @@ fi
 qemu-system-riscv$BITS -s \
 	-machine virt \
 	-cpu rv$BITS \
-	-d unimp,guest_errors \
+	-chardev stdio,id=console,mux=on \
+	-d unimp,guest_errors,int \
 	-blockdev driver=file,filename=drive.img,node-name=hda \
 	-device virtio-blk-device,drive=hda \
-	-smp 2 \
+	-smp 1 \
+	-serial chardev:console \
+	-monitor chardev:console \
 	-nographic \
 	-m 128M \
 	-kernel $3

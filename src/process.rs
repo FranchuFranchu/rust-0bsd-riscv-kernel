@@ -39,6 +39,8 @@ pub enum ProcessState {
 	Yielded,
 	// Not scheduled and not waiting for any future
 	Pending,
+	// schedule() has been called on this process, but it hasn't started running yet
+	Scheduled,
 }
 
 #[derive(Debug)]
@@ -96,8 +98,12 @@ impl Process {
 		
 		info!("Switch to frame at \x1b[32m{:?}\x1b[0m (PC {:x} NAME {:?} HART {})", frame_pointer, unsafe {(*frame_pointer).pc}, self.name, self.trap_frame.hartid);
 		
-		info!("{:?}", PROCESSES.read().iter().filter(|(k, v)| **k != self.trap_frame.pid).map(|(k, v)| v.read().name.clone()).collect() : Vec<_>);
-		
+		//info!("{:?}", PROCESSES.read().iter().filter(|(k, v)| **k != self.trap_frame.pid).map(|(k, v)| v.read().name.clone()).collect() : Vec<_>);
+		info!("count {:?}", PROCESSES.read()
+			.iter()
+			.filter(|(k, v)| **k != self.trap_frame.pid)
+			.filter(|(k, v)| if let ProcessState::Running = v.read().state { true } else { false })
+			.count() + 1);
     
 		self.state = ProcessState::Running;
 		
@@ -136,7 +142,7 @@ impl Process {
 		    ProcessState::Yielded => {
 		    	self.state = ProcessState::Pending;
 		    },
-		    ProcessState::Pending | ProcessState::Running => {
+		    _ => {
 		    	self.no_op_yield_count.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
 		    },
 		}
@@ -182,8 +188,12 @@ impl Process {
 		self.no_op_yield_count.load(core::sync::atomic::Ordering::Acquire) == 0
 	}
 	
+	pub fn this_pid() -> usize {
+		unsafe { cpu::read_sscratch().as_ref().expect("Not running on a process!").pid }
+	}
+	
 	pub fn this() -> Arc<RwLock<Process>> {
-		unsafe { try_get_process(&cpu::read_sscratch().as_ref().expect("Not running on a process!").pid) }
+		try_get_process(&Self::this_pid()) 
 	}
 }
 pub fn init() {
@@ -232,6 +242,7 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
 		name: None,
 		no_op_yield_count: AtomicUsize::new(0),
 	};
+	
 	
 	// Set the initial state for the process
 	process.trap_frame.general_registers[Registers::A0.idx()] = a0;
@@ -345,6 +356,17 @@ pub fn idle_forever_entry_point() {
 /// Must be called from an interrupt context.
 pub fn idle() -> ! {
 	use alloc::format;
+	let this_process = weak_get_process(&Process::this_pid()).upgrade();
+	
+	if let Some(process) = this_process {
+		let mut process = process.write();
+		info!("F {:?}", read_sscratch());
+    	crate::trap::use_boot_frame_if_necessary(&*process.trap_frame as _);
+		info!("F {:?}", read_sscratch());
+		process.state = ProcessState::Pending;
+	} else {
+		info!("No process");
+	}
 	let pid = new_supervisor_process_with_name(idle_entry_point, format!("Idle process for hart {}", load_hartid()));
 	schedule_next_slice(1);
 	context_switch::context_switch(&pid)

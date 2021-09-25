@@ -90,6 +90,7 @@ pub fn test_task_2() {
 pub fn test_task_3() {
 	
 {	
+	info!("Waiting");
 	use crate::lock::shared::Mutex;
 	
 	let m = Mutex::new(0);
@@ -105,7 +106,9 @@ pub fn test_task_3() {
 	let exec = crate::future::Executor::new();
 	let block = async {
 		// First, wait until the device setup is done
+		info!("Waiting");
 		crate::device_setup::is_done_future().await;
+		info!("Waited");
 		// Get the block device
 		use crate::drivers::traits::block::BlockDevice;
 		let block_device: Arc<Mutex<VirtioBlockDevice>>;

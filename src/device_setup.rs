@@ -73,7 +73,7 @@ pub fn is_done_future() -> DeviceSetupDoneFutureShared {
 /// and sets up devices and interrupt handlers for all devices
 pub fn setup_devices() {
 	//crate::fdt::root().read().pretty(0);
-	
+	info!("setting up devices");
 	let lock = crate::fdt::root().read();
 	lock.walk_nonstatic(&mut |node: &crate::fdt::Node| {
 		

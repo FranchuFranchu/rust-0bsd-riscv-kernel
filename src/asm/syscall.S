@@ -33,7 +33,7 @@ do_supervisor_syscall_end:
 	ret
 	
 .error_syscall_interrupt_disabled:
-	call syscall_on_interrupt_disabled
+	j syscall_on_interrupt_disabled
 	
 	lx ra, (sp)
 	addi sp, sp, 16

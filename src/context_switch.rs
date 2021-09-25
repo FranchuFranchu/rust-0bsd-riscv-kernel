@@ -50,7 +50,8 @@ pub fn schedule_and_switch() -> !  {
 		// Nothing left to schedule
 		// Check if it's just that all processes have yielded or that they have been deleted
 		if process::useful_process_count() == 0 {
-			panic!("No processes alive, nothing left to schedule!");
+			info!("No processes alive, nothing left to schedule!");
+			crate::sbi::shutdown(0);
 		} else {
 			// Just wait for something to happen.
 			warn!("All processes have yielded");

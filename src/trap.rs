@@ -1,4 +1,4 @@
-use crate::{context_switch, cpu::{self, Registers, load_hartid, read_sscratch}, external_interrupt, hart::get_this_hart_meta, interrupt_context_waker, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
+use crate::{HART_PANIC_COUNT, context_switch, cpu::{self, Registers, load_hartid, read_sscratch}, external_interrupt, hart::get_this_hart_meta, interrupt_context_waker, process::delete_process, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
 
 /// A pointer to this struct is placed in sscratch
 #[derive(Default, Debug, Clone)] // No copy because they really shouldn't be copied and used without changing the PID
@@ -51,7 +51,11 @@ impl TrapFrame {
 	pub fn set_double_faulting(&mut self) {
 		self.flags |= 4
 	}
-	pub unsafe fn make_current(&self) {
+	/// You need to be the only owner of the trap frame to make it the current one
+	pub unsafe fn make_current(&mut self) {
+		self.flags = (*cpu::read_sscratch()).flags;
+		self.flags |= 8;
+		(*cpu::read_sscratch()).flags &= !8;
 		cpu::write_sscratch(self as *const TrapFrame as usize)
 	}
 }
@@ -59,7 +63,8 @@ impl TrapFrame {
 /// If sscratch equals original_trap_frame, then set sscratch to the boot frame for this hart
 pub fn use_boot_frame_if_necessary(original_trap_frame: *const TrapFrame) {
 	if core::ptr::eq(read_sscratch(), original_trap_frame) {
-		unsafe { get_this_hart_meta().unwrap().boot_frame.make_current() };
+		info!("Changed frame");
+		unsafe { get_this_hart_meta().unwrap().boot_frame.write().make_current() };
 	}
 }
 
@@ -91,6 +96,14 @@ pub(crate) fn clear_interrupt_context() {
 	unsafe { (*read_sscratch()).flags &= !1 }
 }
 
+struct PanicGuard {}
+
+impl Drop for PanicGuard {
+	fn drop(&mut self) {
+		
+	}
+}
+
 /// # Safety
 /// This should never really be called directly from Rust. There's just too many invariants that need to be satisfied
 #[no_mangle]
@@ -102,6 +115,12 @@ pub unsafe extern "C"  fn trap_handler(
 	sstatus: usize,
 	frame: *mut TrapFrame,
 ) -> usize {
+	if HART_PANIC_COUNT.load(core::sync::atomic::Ordering::Acquire) != 0 {
+		panic!("{}", "other hart panicked!");
+	}
+	
+	let panic_guard = PanicGuard {};
+	
 	let is_interrupt = (cause & (usize::MAX / 2 + 1)) != 0;
 	let cause = cause & 0xFFF;
 	
@@ -157,7 +176,7 @@ pub unsafe extern "C"  fn trap_handler(
 						
 						context_switch::make_this_process_pending();
 						
-						unsafe { get_this_hart_meta().unwrap().boot_frame.make_current() };
+						unsafe { get_this_hart_meta().unwrap().boot_frame.write().make_current() };
 						
 						context_switch::schedule_and_switch();
 					},
@@ -190,8 +209,9 @@ pub unsafe extern "C"  fn trap_handler(
 				loop {};
 			},
 			_ => {
-				info!("{}", "test");
-				info!("Error with cause: {:?} pc: {:X} *pc: {:X}", cause, unsafe { (*frame).pc }, unsafe { *((*frame).pc as *const u32)});
+				error!("Error with cause: {:?} pc: {:X} *pc: {:X}", cause, unsafe { (*frame).pc }, unsafe { *((*frame).pc as *const u32)});
+				// Kill the process
+				delete_process((*frame).pid);
 				loop {} //panic!("Non-interrupt trap");
 			}
 		}

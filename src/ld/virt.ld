@@ -1,5 +1,7 @@
 ENTRY( boot )
 
+EXTERN(status_summary);
+
 PHDRS
 {
   text PT_LOAD;
@@ -7,6 +9,10 @@ PHDRS
   bss PT_LOAD;
 }
 
+__eh_frame_hdr_start = ADDR(.eh_frame_hdr);
+__eh_frame_hdr_end = ADDR(.eh_frame_hdr) + SIZEOF(.eh_frame_hdr);
+__eh_frame_start = ADDR(.eh_frame);
+__eh_frame_end = ADDR(.eh_frame) + SIZEOF(.eh_frame);
 
 SECTIONS
 {
@@ -39,6 +45,14 @@ SECTIONS
       *(.bss.*)
       *(.bss)
       *(.bootstrap_stack)
+  }
+  .eh_frame_hdr ALIGN (4K) : AT (ADDR (.eh_frame_hdr))
+  {
+      *(.eh_frame_hdr)
+  }
+  .eh_frame ALIGN (4K) : AT (ADDR (.eh_frame))
+  {
+      *(.eh_frame)
   }
   PROVIDE(_stack_end = .);
   

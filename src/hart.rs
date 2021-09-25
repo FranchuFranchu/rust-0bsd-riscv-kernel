@@ -12,7 +12,7 @@ use crate::{cpu::{self, load_hartid}, plic::Plic0, process::{self, TASK_STACK_SI
 pub struct HartMeta {
 	pub plic: Plic0,
 	pub boot_stack: Option<Box<Aligned<A16, [u8; TASK_STACK_SIZE]>>>,
-	pub boot_frame: Pin<Box<TrapFrame>>,
+	pub boot_frame: RwLock<Pin<Box<TrapFrame>>>,
 	pub is_panicking: AtomicBool,
 }
 
@@ -29,7 +29,7 @@ pub unsafe fn add_boot_hart(trap_frame: TrapFrame) {
 	let meta = HartMeta { 
 		plic: Plic0::new_with_fdt(), 
 		boot_stack: None,
-		boot_frame: Pin::new(Box::new(trap_frame)),
+		boot_frame: RwLock::new(Pin::new(Box::new(trap_frame))),
 		is_panicking: AtomicBool::new(false)
 	};
 	HART_META.write().insert(load_hartid(), Arc::new(meta));
@@ -55,7 +55,7 @@ pub fn add_this_secondary_hart(hartid: usize, interrupt_sp: usize) {
 	HART_META.write().insert(load_hartid(), Arc::new(HartMeta { 
 		plic: Plic0::new_with_fdt(), 
 		boot_stack: None, 
-		boot_frame: trap_frame,
+		boot_frame: RwLock::new(trap_frame),
 		is_panicking: AtomicBool::new(false),
 	}));
 	

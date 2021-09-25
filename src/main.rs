@@ -26,6 +26,11 @@
 extern crate alloc;
 
 use core::{panic::PanicInfo, ffi::c_void};
+use core::sync::atomic::AtomicUsize;
+use process::PROCESSES;
+
+use crate::paging::{MEGAPAGE_SIZE, Paging};
+use crate::process::{ProcessState, delete_process};
 use crate::{cpu::{load_hartid, read_sscratch}, hart::get_hart_meta, plic::Plic0};
 use core::sync::atomic::Ordering;
 
@@ -92,6 +97,8 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	// SAFETY: identity_map is valid when the root page is valid, which in this case is true
 	// and paging is disabled now
 	#[cfg(target_arch = "riscv64")] unsafe { paging::sv39::identity_map(&mut paging::ROOT_PAGE as *mut paging::Table) }
+	use crate::paging::sv39::RootTable;
+
 	
 	// Initialize allocation
 	allocator::init();
@@ -121,7 +128,7 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	// Now that allocation and FDT is set up we can move the boot frame to a "proper" place
 	let copied_frame = unsafe { BOOT_FRAME.clone() };
 	unsafe { hart::add_boot_hart(copied_frame) };
-	unsafe { crate::cpu::write_sscratch(&*hart::get_this_hart_meta().unwrap().boot_frame as *const trap::TrapFrame as usize) };
+	unsafe { crate::cpu::write_sscratch(&**hart::get_this_hart_meta().unwrap().boot_frame.read() as *const trap::TrapFrame as usize) };
 	
 	
 	// Set up the external interrupts
@@ -151,9 +158,19 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 		sstatus |= 1 << 1;
 		llvm_asm!("csrw sstatus, $0" :: "r"(sstatus));
 	}
+	let mut tab = RootTable(unsafe { &mut paging::ROOT_PAGE });
+	tab.map(0, 4096, 4096, 7);
+	//unsafe { tab.0.entries[0].as_table_mut().entries[0].value = 0x2000000f; }
+	println!("{:p}", tab.0);
+	println!("{:x}", (cpu::read_satp() & 0xffffffff) << 12);
+	
+	
+	loop {};
+	
 	use alloc::borrow::ToOwned;
 	process::new_supervisor_process_with_name(test_task::test_task_3, "disk-test".to_owned());
 	process::new_supervisor_process_with_name(device_setup::setup_devices, "setup-devices".to_owned());
+	
 	
 	
 	
@@ -170,19 +187,28 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 	}
 }
 
+pub static HART_PANIC_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-	if unsafe { read_sscratch().as_ref().unwrap().is_double_faulting() } {
-		use core::fmt::Write;
-		write!(unsafe {crate::drivers::uart::Uart::new(0x1000_0000)}, "\n\x1b[1;31mDouble fault, hart {}\x1b[0m\n", load_hartid());
-		loop {};
-	}
     // Disable ALL interrupts
     unsafe { 
 		cpu::write_sie(0);
 	}
+	HART_PANIC_COUNT.fetch_add(1, Ordering::SeqCst);
+	if let Some(e) = unsafe { read_sscratch().as_ref() } {
+		if e.is_double_faulting() {
+			use core::fmt::Write;
+			write!(unsafe {crate::drivers::uart::Uart::new(0x1000_0000)}, "\n\x1b[1;31mDouble fault, hart {}\x1b[0m\n", load_hartid());
+			loop {};
+		}
+	}
 	println!("{:?}", info.message());
+	
+	if PROCESSES.read().contains_key(&crate::process::Process::this_pid()) {
+		delete_process(crate::process::Process::this_pid());
+	}
+	
 	
 	if let Some(meta) = get_hart_meta(load_hartid()) {
 		if meta.is_panicking.load(Ordering::Relaxed) {
@@ -235,6 +261,18 @@ fn panic(info: &PanicInfo) -> ! {
     }
 }
 
+
+#[no_mangle]
+pub fn status_summary() {
+	println!("{:?}", "Processes: ");
+	PROCESSES.read().iter().for_each(|(k, v)| {
+		use alloc::borrow::ToOwned;
+		let v = v.read();
+		println!("{}:", v.name.as_ref().map(|s| s.as_ref()).unwrap_or("<unnamed>"));
+		println!("	{:?}", v.state);
+	});
+}
+
 pub mod asm;
 pub mod allocator;
 pub mod context_switch;
@@ -258,3 +296,4 @@ pub mod plic;
 pub mod hart;
 pub mod timeout;
 pub mod lock;
+

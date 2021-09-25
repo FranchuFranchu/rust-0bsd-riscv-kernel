@@ -1,6 +1,4 @@
-
-
-
+use core::ops::{Index, IndexMut};
 
 pub mod sv32;
 #[cfg(target_arch = "riscv64")] pub mod sv39;
@@ -9,6 +7,7 @@ pub mod sv32;
 // Clippy is stupid and doesn't realize that what we do for AddressMask is okay
 #[allow(clippy::enum_clike_unportable_variant)] 
 #[repr(usize)]
+#[derive(Debug)]
 enum EntryBits {
 	// The V bit indicates whether the PTE is valid; if it is 0, all other bits in the PTE are don’t-cares and may be used freely by software.
 	Valid = 1 << 0,
@@ -34,6 +33,7 @@ enum EntryBits {
 	Dirty = 1 << 7,
 	
 	AddressMask = usize::MAX ^ ((1 << 8) - 1), 
+	Rwx = 2 | 4 | 8,
 	
 	CodeSupervisor = (1 << 1 | 1 << 3 | 1) as usize,
 	DataSupervisor = (1 << 1 | 1 << 2 | 1) as usize,
@@ -44,26 +44,79 @@ impl const ::core::ops::BitOr for EntryBits {
 	fn bitor(self, a: EntryBits) -> Self::Output { self as usize | a as usize }
 }
 
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Copy, Clone, Debug)]
 pub struct Entry {
 	pub value: usize,
 }
 
 impl Entry {
 	pub const fn zeroed() -> Self {
-		Entry { value: 0}
+		Entry { value: 0 }
 	}
 }
 
 
 impl Entry {
-	pub unsafe fn get_table(&self) -> *mut Table {
-		(self.value & EntryBits::AddressMask as usize) as *mut Table
+	/// # Safety
+	/// The entry's value must be a valid physical address pointer 
+	pub unsafe fn as_table_mut(&mut self) -> &mut Table {
+		(((self.value & EntryBits::AddressMask as usize) << 2) as *mut Table).as_mut().unwrap()
+	}
+	/// # Safety
+	/// The entry's value must be a valid physical address pointer 
+	pub unsafe fn as_table(&self) -> &Table {
+		(((self.value & EntryBits::AddressMask as usize) << 2) as *mut Table).as_ref().unwrap()
+	}
+	
+	pub unsafe fn try_as_table_mut(&mut self) -> Option<&mut Table> {
+		if self.is_leaf() {
+			None
+ 		} else {
+ 			Some(self.as_table_mut())
+ 		}
+	}
+	pub unsafe fn try_as_table(&self) -> Option<&Table> {
+		if self.is_leaf() {
+			None
+ 		} else {
+ 			Some(self.as_table())
+ 		}
+	}
+	
+	pub fn is_leaf(&self) -> bool {
+		(self.value & EntryBits::Rwx as usize) != 0
+	}
+	/// This takes a leaf entry and turns it into a reference to a page table with the same effect.
+	/// Increment should be one of the PAGE_SIZE, MEGAPAGE_SIZE, GIGAPAGE_SIZE, etc constants
+	/// If this entry is a megapage, for example, the increment should be PAGE_SIZE
+	
+	pub unsafe fn split(&mut self, increment: usize) {
+		println!("S {:p}", self);
+		use alloc::boxed::Box;
+		
+		
+		let mut table = Box::new(Table::zeroed());
+		let mut current_address = self.value & EntryBits::AddressMask as usize;
+		//info!("{:?}", unsafe { *((current_address as *const u32).add(10)) });
+		let flags = self.value & !(EntryBits::AddressMask as usize);
+		
+		
+		for entry in table.entries.iter_mut() {
+			entry.value = flags | current_address;
+			current_address += increment >> 2;
+		}
+		self.value = 1 | ((&*table as *const Table as usize) >> 2);
+		Box::leak(table);
+		println!("{:x}", self.value);
+		
+		
+		debug_assert!(!self.is_leaf());
 	}
 }
 
 #[repr(C)]
 #[repr(align(4096))]
+#[derive(Debug)]
 pub struct Table {
 	pub entries: [Entry; 512],
 }
@@ -74,6 +127,24 @@ impl Table {
 	}
 }
 
+impl Index<usize> for Table {
+	type Output = Entry;
+	fn index(&self, idx: usize) -> &Entry {
+		&self.entries[idx]
+	}
+}
+
+impl IndexMut<usize> for Table {
+	fn index_mut(&mut self, idx: usize) -> &mut Entry {
+		&mut self.entries[idx]
+	}
+}
+
+pub trait Paging {
+	fn map(&mut self, physical_addr: usize, virtual_addr: usize, length: usize, flags: usize) {
+		
+	}
+}
 
 pub unsafe fn enable(root_table_physical: usize) {
 	
@@ -86,6 +157,7 @@ pub static mut ROOT_PAGE: Table = Table::zeroed();
 
 pub const ENTRY_COUNT: usize = 512;
 pub const PAGE_ALIGN: usize = 4096;
+pub const PAGE_SIZE: usize = PAGE_ALIGN;
 pub const MEGAPAGE_SIZE: usize = PAGE_ALIGN * ENTRY_COUNT;
 #[cfg(target_arch = "riscv64")] pub const GIGAPAGE_SIZE: usize = PAGE_ALIGN * ENTRY_COUNT * ENTRY_COUNT;
 #[cfg(target_arch = "riscv64")] pub const TERAPAGE_SIZE: usize = PAGE_ALIGN * ENTRY_COUNT * ENTRY_COUNT * ENTRY_COUNT;

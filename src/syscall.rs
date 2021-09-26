@@ -1,12 +1,16 @@
 use num_enum::{FromPrimitive, IntoPrimitive};
 
-use crate::{context_switch, cpu::Registers, process::{self, ProcessState, try_get_process}, trap::TrapFrame};
+use crate::{
+    context_switch,
+    cpu::Registers,
+    process::{self},
+    trap::TrapFrame,
+};
 
 #[repr(usize)]
-#[derive(IntoPrimitive, FromPrimitive)]
-#[derive(Debug)]
+#[derive(IntoPrimitive, FromPrimitive, Debug)]
 pub enum SyscallNumbers {
-	// Kills the task
+    // Kills the task
     Exit = 1,
     // Marks this task as "yielded" until it gets woken up by a Waker
     Yield = 2,
@@ -20,7 +24,7 @@ pub enum SyscallNumbers {
     Seek,
     Truncate,
     Tell,
-    
+
     // Future operations (for asynchronous tasks in the kernel or in other processes)
     // Creates a new future for use in other processes
     FutureCreate = 0x20,
@@ -34,9 +38,7 @@ pub enum SyscallNumbers {
     FutureClone,
     // Creates a future that completes when any of the given futures complete
     FutureOr,
-    
-    
-    
+
     #[num_enum(default)]
     Unknown,
 }
@@ -46,19 +48,22 @@ pub fn do_syscall(frame: *mut TrapFrame) {
     // (this may break aliasing rules though!)
     let frame_raw = frame;
     let frame = unsafe { frame_raw.as_mut().unwrap_unchecked() };
-    
+
     let number = SyscallNumbers::from(frame.general_registers[Registers::A7.idx()]);
     use SyscallNumbers::*;
     match number {
         Exit => {
             syscall_exit(frame, 0);
-        },
+        }
         Yield => {
             syscall_yield(frame);
-        },
+        }
         Unknown => {
-            warn!("Unknown syscall {:?}", frame.general_registers[Registers::A7.idx()]);
-        },
+            warn!(
+                "Unknown syscall {:?}",
+                frame.general_registers[Registers::A7.idx()]
+            );
+        }
         _ => {
             warn!("Unimplemented syscall {:?}", number);
         }
@@ -71,11 +76,9 @@ pub fn syscall_exit(frame: &mut TrapFrame, return_code: usize) {
 }
 
 pub fn syscall_yield(frame: &mut TrapFrame) {
-    
-    
     frame.pc += 4;
     // Set this process's state to yielded
-    let mut p = process::try_get_process(&frame.pid);
+    let p = process::try_get_process(&frame.pid);
     let mut guard = p.write();
     if guard.try_yield_maybe() {
         crate::trap::use_boot_frame_if_necessary(&*guard.trap_frame as _);
@@ -90,7 +93,6 @@ pub fn syscall_yield(frame: &mut TrapFrame) {
 
 #[no_mangle]
 pub extern "C" fn syscall_on_interrupt_disabled() {
-    
     error!("Can't make a syscall while interrupts are disabled! (Maybe you're holding a lock while making a syscall?)");
-    loop {};
+    loop {}
 }

@@ -6,42 +6,33 @@
 //! This is useful for giving functions the same context whether they're ran from a kernel thread or from an interrupt context
 //! *Interrupt tasks should NOT have blocking operations!*
 
+use alloc::{boxed::Box, collections::VecDeque, sync::Arc, task::Wake};
 
-use alloc::{
-	collections::VecDeque, 
-	boxed::Box, 
-	task::Wake,
-	sync::Arc
-};
-
-use crate::lock::shared::Mutex;
-
-use crate::trap::in_interrupt_context;
+use crate::{lock::shared::Mutex, trap::in_interrupt_context};
 
 static WAITING_WAKERS: Mutex<Option<VecDeque<Arc<InterruptContextWaker>>>> = Mutex::new(None);
 
 pub struct InterruptContextWaker(pub Box<dyn Fn() + Send + Sync>);
 
 impl Wake for InterruptContextWaker {
-	fn wake(self: Arc<Self>) {
-		WAITING_WAKERS.lock().as_mut().unwrap().push_back(self)
-	}
+    fn wake(self: Arc<Self>) {
+        WAITING_WAKERS.lock().as_mut().unwrap().push_back(self)
+    }
 }
 
 /// When running in an interrupt context, wake up all the interrupt context wakers
 /// that are waiting to be woken up
 pub(crate) fn wake_all() {
-	assert!(in_interrupt_context());
-	while let Some(i) = {
-		// this is done to prevent WAITING_WAKERS from being locked while i.0 is called
-		let l = WAITING_WAKERS.lock().as_mut().unwrap().pop_front();
-		l
-	} {
-		i.0();
-	}
+    assert!(in_interrupt_context());
+    while let Some(i) = {
+        // this is done to prevent WAITING_WAKERS from being locked while i.0 is called
+        let l = WAITING_WAKERS.lock().as_mut().unwrap().pop_front();
+        l
+    } {
+        i.0();
+    }
 }
 
 pub fn init() {
-	*WAITING_WAKERS.lock() = Some(VecDeque::new());
+    *WAITING_WAKERS.lock() = Some(VecDeque::new());
 }
-

@@ -1,7 +1,6 @@
-use lock_api::{RawMutex, GuardSend};
-use core::sync::atomic::{AtomicBool, Ordering, AtomicUsize};
+use core::sync::atomic::AtomicUsize;
 
-use crate::{cpu::load_hartid, trap::in_interrupt_context};
+use lock_api::{GuardSend, RawMutex};
 
 pub use super::super::spin::RawMutex as RawSpinlock;
 use super::{lock_and_disable_interrupts, unlock_and_enable_interrupts_if_necessary};
@@ -9,14 +8,17 @@ use super::{lock_and_disable_interrupts, unlock_and_enable_interrupts_if_necessa
 pub const NO_HART: usize = usize::MAX;
 
 // 1. Define our raw lock type
-pub struct RawSharedLock { 
+pub struct RawSharedLock {
     internal: RawSpinlock,
     old_sie: AtomicUsize,
 }
 
 // 2. Implement RawMutex for this type
 unsafe impl RawMutex for RawSharedLock {
-    const INIT: RawSharedLock = RawSharedLock { internal: RawSpinlock::INIT, old_sie: AtomicUsize::new(0) };
+    const INIT: RawSharedLock = RawSharedLock {
+        internal: RawSpinlock::INIT,
+        old_sie: AtomicUsize::new(0),
+    };
 
     // A spinlock guard can be sent to another thread and unlocked there
     type GuardMarker = GuardSend;

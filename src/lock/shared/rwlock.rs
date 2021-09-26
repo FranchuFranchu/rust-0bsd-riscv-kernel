@@ -1,24 +1,32 @@
-use lock_api::{RawRwLock, GuardSend};
-use core::sync::atomic::{AtomicUsize, Ordering};
-use alloc::vec::Vec;
-use crate::{cpu::load_hartid, hart::HART_META, lock::shared::{lock_and_disable_interrupts, unlock_and_enable_interrupts_if_necessary}, trap::in_interrupt_context};
+use lock_api::{GuardSend, RawRwLock};
 
 pub use super::super::spin::RawRwLock as RawSpinRwLock;
-use super::super::spin::RwLock as SpinRwLock;
+use crate::{
+    cpu::load_hartid,
+    hart::HART_META,
+    lock::shared::{lock_and_disable_interrupts, unlock_and_enable_interrupts_if_necessary},
+    trap::in_interrupt_context,
+};
 
 pub struct RawSharedRwLock {
-	internal: RawSpinRwLock,
+    internal: RawSpinRwLock,
 }
 
 unsafe impl RawRwLock for RawSharedRwLock {
-    const INIT: RawSharedRwLock = Self { internal: RawSpinRwLock::INIT };
+    const INIT: RawSharedRwLock = Self {
+        internal: RawSpinRwLock::INIT,
+    };
 
     type GuardMarker = GuardSend;
 
     fn lock_shared(&self) {
-        debug!("{} {:x} Lock shared", load_hartid(), (self as *const Self as usize) & 0xffffffff);
+        debug!(
+            "{} {:x} Lock shared",
+            load_hartid(),
+            (self as *const Self as usize) & 0xffffffff
+        );
         lock_and_disable_interrupts();
-		self.internal.lock_shared()
+        self.internal.lock_shared()
     }
 
     fn try_lock_shared(&self) -> bool {
@@ -31,13 +39,22 @@ unsafe impl RawRwLock for RawSharedRwLock {
     }
 
     unsafe fn unlock_shared(&self) {
-        debug!("{} {:x} Unlock shared", load_hartid(), (self as *const Self as usize) & 0xffffffff);
+        debug!(
+            "{} {:x} Unlock shared",
+            load_hartid(),
+            (self as *const Self as usize) & 0xffffffff
+        );
         self.internal.unlock_shared();
         unlock_and_enable_interrupts_if_necessary();
     }
 
     fn lock_exclusive(&self) {
-        debug!("{} {:x} Lock exclusive {}", load_hartid(), (self as *const Self as usize) & 0xffffffff, self.internal.is_locked());
+        debug!(
+            "{} {:x} Lock exclusive {}",
+            load_hartid(),
+            (self as *const Self as usize) & 0xffffffff,
+            self.internal.is_locked()
+        );
         lock_and_disable_interrupts();
         self.internal.lock_exclusive()
     }
@@ -52,7 +69,11 @@ unsafe impl RawRwLock for RawSharedRwLock {
     }
 
     unsafe fn unlock_exclusive(&self) {
-        debug!("{} {:x} Unlock exclusive", load_hartid(), (self as *const Self as usize) & 0xffffffff);
+        debug!(
+            "{} {:x} Unlock exclusive",
+            load_hartid(),
+            (self as *const Self as usize) & 0xffffffff
+        );
         self.internal.unlock_exclusive();
         unlock_and_enable_interrupts_if_necessary();
     }

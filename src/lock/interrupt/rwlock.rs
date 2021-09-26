@@ -1,22 +1,22 @@
-use lock_api::{RawRwLock, GuardSend};
-use core::sync::atomic::{AtomicUsize, Ordering};
-
-use crate::trap::in_interrupt_context;
+use lock_api::{GuardSend, RawRwLock};
 
 pub use super::super::spin::RawRwLock as RawSpinRwLock;
+use crate::trap::in_interrupt_context;
 
 pub struct RawInterruptRwLock {
-	internal: RawSpinRwLock,
+    internal: RawSpinRwLock,
 }
 
 unsafe impl RawRwLock for RawInterruptRwLock {
-    const INIT: RawInterruptRwLock = Self { internal: RawSpinRwLock::INIT };
+    const INIT: RawInterruptRwLock = Self {
+        internal: RawSpinRwLock::INIT,
+    };
 
     type GuardMarker = GuardSend;
 
     fn lock_shared(&self) {
         assert!(in_interrupt_context());
-		self.internal.lock_shared()
+        self.internal.lock_shared()
     }
 
     fn try_lock_shared(&self) -> bool {

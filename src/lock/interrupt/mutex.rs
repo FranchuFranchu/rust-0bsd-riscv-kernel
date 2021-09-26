@@ -1,24 +1,22 @@
 /// Locks that are used exclusively in interrupt contexts
 /// Essentially a spinlock
-
-use lock_api::{RawMutex, GuardSend};
-use core::sync::atomic::{AtomicBool, Ordering, AtomicUsize};
-
-use crate::{cpu::load_hartid, trap::in_interrupt_context};
-
+use lock_api::{GuardSend, RawMutex};
 
 pub use super::super::spin::RawMutex as RawSpinlock;
+use crate::trap::in_interrupt_context;
 
 pub const NO_HART: usize = usize::MAX;
 
 // 1. Define our raw lock type
-pub struct RawInterruptLock { 
+pub struct RawInterruptLock {
     internal: RawSpinlock,
 }
 
 // 2. Implement RawMutex for this type
 unsafe impl RawMutex for RawInterruptLock {
-    const INIT: RawInterruptLock = RawInterruptLock { internal: RawSpinlock::INIT };
+    const INIT: RawInterruptLock = RawInterruptLock {
+        internal: RawSpinlock::INIT,
+    };
 
     // A spinlock guard can be sent to another thread and unlocked there
     type GuardMarker = GuardSend;

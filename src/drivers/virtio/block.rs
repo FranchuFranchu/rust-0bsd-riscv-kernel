@@ -96,12 +96,11 @@ impl Future for BlockRequestFuture {
 	}
 }
 
-use crate::drivers::BlockDevice;
+use crate::drivers::traits::block::{BlockDevice, AnyRequestFuture};
 
 impl BlockDevice for VirtioBlockDevice {
-	type Request = BlockRequestFuture;
-	fn _create_request(&self, sector: u64, buffer: Box<[u8]>, write: bool) -> Self::Request {
-		BlockRequestFuture {
+	fn _create_request(&self, sector: u64, buffer: Box<[u8]>, write: bool) -> Box<dyn AnyRequestFuture + Unpin + Send + Sync> {
+		Box::new(BlockRequestFuture {
 			device: self.this.clone(),
 			header: RequestHeader {
 				r#type: if write { 1 } else { 0 },
@@ -111,7 +110,7 @@ impl BlockDevice for VirtioBlockDevice {
 			buffer: Some(buffer),
 			descriptor_id: None,
 			was_queued: false,
-		}
+		})
 	}
 }
 

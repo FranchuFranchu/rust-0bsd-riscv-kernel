@@ -7,7 +7,7 @@ use super::*;
 /// Otherwise, it can remap things the wrong way and break everything
 pub unsafe fn identity_map(root: *mut Table) {
 	for (idx, i) in ((*root).entries).iter_mut().enumerate() {
-		i.value = (EntryBits::Read as usize) | (EntryBits::Write as usize) | (EntryBits::Execute as usize) | (EntryBits::Valid as usize)| (GIGAPAGE_SIZE / 4 * idx);
+		i.value = EntryBits::VALID | EntryBits::RWX | (GIGAPAGE_SIZE / 4 * idx);
 	}
 }
 
@@ -16,16 +16,16 @@ pub struct RootTable<'a> (pub &'a mut Table);
 
 impl<'a> Paging for RootTable<'a> {
 	fn map(&mut self, virtual_addr: usize, physical_addr: usize, length: usize, flags: usize) {
-		let vpn2_min = ((virtual_addr >> 30) & (PAGE_ALIGN - 1)) / 4;
-		let vpn1_min = ((virtual_addr >> 21) & (PAGE_ALIGN - 1)) / 4;
-		let vpn0_min = ((virtual_addr >> 12) & (PAGE_ALIGN - 1)) / 4;
+		let vpn2_min = ((virtual_addr >> 28) & (PAGE_ALIGN - 1)) / 4;
+		let vpn1_min = ((virtual_addr >> 19) & (PAGE_ALIGN - 1)) / 4;
+		let vpn0_min = ((virtual_addr >> 9) & (PAGE_ALIGN - 1)) / 4;
 		
-		let vpn2_max = (((virtual_addr + length) >> 30) & (PAGE_ALIGN - 1)) / 4;
-		let vpn1_max = (((virtual_addr + length) >> 21) & (PAGE_ALIGN - 1)) / 4;
-		let vpn0_max = (((virtual_addr + length) >> 12) & (PAGE_ALIGN - 1)) / 4;
+		let vpn2_max = (((virtual_addr + length) >> 28) & (PAGE_ALIGN - 1)) / 4;
+		let vpn1_max = (((virtual_addr + length) >> 19) & (PAGE_ALIGN - 1)) / 4;
+		let vpn0_max = (((virtual_addr + length) >> 9) & (PAGE_ALIGN - 1)) / 4;
+		println!("{:?}", vpn0_max);
 		
-		let offset: usize = (physical_addr / 4).wrapping_sub(virtual_addr);
-		println!("{:x}", offset);
+		let offset: usize = physical_addr.wrapping_sub(virtual_addr) >> 2;
 		
 		for vpn2 in vpn2_min..vpn2_max+1 {
 			let mut entry = &mut self.0.entries[vpn2];
@@ -44,20 +44,26 @@ impl<'a> Paging for RootTable<'a> {
 						info!("{}", "Split")
 					};
 					if let Some(table) = unsafe { entry.try_as_table_mut() } {
-						for vpn0 in vpn0_min..vpn0_max+1 {
+						for vpn0 in vpn0_min..vpn0_max {
 							let mut entry = &mut table[vpn0];
 							println!("vp0 {} {:p}", vpn0, &entry);
 							println!("oldval {:x}", entry.value);
-							entry.value = (vpn2 << 30 | vpn1 << 21 | vpn0 << 12 | flags).wrapping_add(offset);
+							println!("virt {:x}", (vpn2 << 30 | vpn1 << 21 | vpn0 << 12));
+							entry.value = (vpn2 << 28 | vpn1 << 19 | vpn0 << 10 | flags).wrapping_add(offset);
 							println!("newval {:x}", entry.value);
 						}
 					} else {
-						entry.value = (vpn2 << 30 | vpn1 << 21 | flags).wrapping_add(offset);
+						println!("oldval {:x}", entry.value);
+						println!("virt {:x}", (vpn2 << 30 | vpn1 << 21));
+						entry.value = (vpn2 << 28 | vpn1 << 19 | flags).wrapping_add(offset);
+						println!("newval {:x}", entry.value);
 					}
 				}
 			} else {
-				info!("{:?}", vpn2);
-				entry.value = (vpn2 << 30 | flags).wrapping_add(offset);
+				println!("oldval {:x}", entry.value);
+				println!("virt {:x}", (vpn2 << 30));
+				entry.value = (vpn2 << 28 | flags).wrapping_add(offset);
+				println!("newval {:x}", entry.value);
 			}
 		};
 		

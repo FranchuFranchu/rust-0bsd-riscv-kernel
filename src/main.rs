@@ -37,6 +37,8 @@ use core::sync::atomic::Ordering;
 #[macro_use]
 extern crate log;
 #[macro_use]
+extern crate async_trait;
+#[macro_use]
 extern crate zerocopy;
 
 
@@ -159,11 +161,7 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 		llvm_asm!("csrw sstatus, $0" :: "r"(sstatus));
 	}
 	let mut tab = RootTable(unsafe { &mut paging::ROOT_PAGE });
-	tab.map(0, 4096, 4096, 7);
-	//unsafe { tab.0.entries[0].as_table_mut().entries[0].value = 0x2000000f; }
-	println!("{:p}", tab.0);
-	println!("{:x}", (cpu::read_satp() & 0xffffffff) << 12);
-	
+	tab.map(0x20000000, 0x20001000, 0x200000 , 15);
 	
 	loop {};
 	
@@ -287,6 +285,7 @@ pub mod drivers;
 pub mod sbi;
 pub mod scheduler;
 pub mod future;
+pub mod filesystem;
 pub mod handle;
 pub mod process;
 pub mod test_task;

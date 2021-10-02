@@ -12,7 +12,7 @@ use core::{
 };
 
 use super::{SplitVirtqueue, VirtioDevice, VirtioDeviceType};
-use crate::{interrupt_context_waker::InterruptContextWaker, lock::shared::Mutex};
+use crate::{interrupt_context_waker::InterruptContextWaker, lock::shared::{Mutex, RwLock}};
 
 // See https://docs.oasis-open.org/virtio/virtio/v1.1/cs01/virtio-v1.1-cs01.html#x1-2440004
 // section 5.2.6
@@ -33,7 +33,7 @@ pub struct VirtioBlockDevice {
     device: Arc<Mutex<VirtioDevice>>,
 
     /// A weak pointer to itself. This has to be used when callbacks need to use self later on (when the &mut self has expired)
-    pub this: Weak<Mutex<Self>>,
+    pub this: Weak<RwLock<Self>>,
 
     // A map between descriptor IDs and Wakers
     waiting_requests: BTreeMap<u16, Vec<Waker>>,
@@ -42,7 +42,7 @@ pub struct VirtioBlockDevice {
 }
 
 pub struct BlockRequestFuture {
-    device: Weak<Mutex<VirtioBlockDevice>>,
+    device: Weak<RwLock<VirtioBlockDevice>>,
     header: RequestHeader,
     // The buffer is moved out when block operation is being carried out, and then it's moved
     // back in when it's done (AFTER the future is poll()'d).
@@ -58,7 +58,7 @@ impl Future for BlockRequestFuture {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<<Self as Future>::Output> {
         let device = self.device.upgrade().unwrap();
-        let mut device = device.lock();
+        let mut device = device.write();
         if self.buffer.is_none() {
             // Check if the driver has been done yet
             if let Some(buffer) = device.take_buffer(&self.descriptor_id.unwrap()) {
@@ -84,10 +84,8 @@ impl Future for BlockRequestFuture {
             self.device
                 .upgrade()
                 .unwrap()
-                .lock()
+                .write()
                 .begin_request(&self.descriptor_id.unwrap());
-
-            println!("{:?}", self.buffer);
 
             Poll::Pending
         }
@@ -166,7 +164,7 @@ impl VirtioBlockDevice {
                 // Now we can recreate self based on the weak pointer we moved
                 // and then poll it again.
                 // The value should be Ready now
-                let this = this_weak.upgrade().unwrap().lock().poll_device();
+                let this = this_weak.upgrade().unwrap().write().poll_device();
             })))
             .into(),
         ));
@@ -242,8 +240,12 @@ impl VirtioBlockDevice {
     }
 }
 
+use crate::drivers::traits::block::GenericBlockDevice;
+
 impl VirtioDeviceType for VirtioBlockDevice {
-    fn configure(device: Arc<Mutex<VirtioDevice>>) -> Result<Arc<Mutex<Self>>, ()> {
+	type Trait = dyn GenericBlockDevice + Send + Sync + Unpin;
+
+    fn configure(device: Arc<Mutex<VirtioDevice>>) -> Result<Arc<RwLock<Self::Trait>>, ()> {
         let q = device.lock().configure_queue(0);
         let dev = VirtioBlockDevice {
             request_virtqueue: Mutex::new(q),
@@ -252,16 +254,16 @@ impl VirtioDeviceType for VirtioBlockDevice {
             waiting_requests: BTreeMap::new(),
             header_buffers: BTreeMap::new(),
         };
-        let dev = Arc::new(Mutex::new(dev));
-        dev.lock().this = Arc::downgrade(&dev);
+        let dev = Arc::new(RwLock::new(dev));
+        dev.write().this = Arc::downgrade(&dev);
 
         // setup wakers and similar stuff
-        dev.lock().poll_device();
+        dev.write().poll_device();
 
         let dev_clone = dev.clone();
         // Configure the instance later on (to prevent deadlocks)
         Arc::new(InterruptContextWaker(Box::new(move || {
-            dev_clone.lock().instance_configure();
+            dev_clone.write().instance_configure();
         })))
         .wake();
         Ok(dev)

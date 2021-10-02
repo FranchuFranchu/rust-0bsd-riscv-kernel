@@ -51,6 +51,7 @@ pub fn add_this_secondary_hart(hartid: usize, interrupt_sp: usize) {
     trap_frame.pid = 0;
     trap_frame.hartid = hartid;
     trap_frame.interrupt_stack = interrupt_sp;
+    
 
     // SAFETY: trap_frame is a valid trap frame and will live as long as this hart exists
     // so sscratch will be valid and this will not invoke UB
@@ -87,11 +88,12 @@ pub unsafe fn start_all_harts(start_addr: usize) {
                 if status == 1 {
                     // This hart is stopped
                     // Create a stack for it and pass it in a1
-                    let process_stack = alloc::vec![0; 4096*2].into_boxed_slice();
+                    let process_stack = alloc::vec![0; 4096*8].into_boxed_slice();
+                    println!("{:p}", process_stack);
                     sbi::start_hart(
                         hartid,
                         start_addr,
-                        process_stack.as_ptr() as usize + (4096 * 2) - 0x10,
+                        process_stack.as_ptr() as usize + (4096 * 8) - 0x10,
                     )
                     .expect("Starting hart failed!");
                     Box::leak(process_stack);

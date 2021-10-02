@@ -50,6 +50,7 @@ pub fn schedule_and_switch() -> ! {
         if process::useful_process_count() == 0 {
             info!("No processes alive, nothing left to schedule!");
             crate::sbi::shutdown(0);
+            loop {};
         } else {
             // Just wait for something to happen.
             warn!("All processes have yielded");

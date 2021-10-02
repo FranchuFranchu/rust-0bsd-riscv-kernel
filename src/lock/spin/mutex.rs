@@ -58,6 +58,12 @@ unsafe impl RawMutex for RawSpinlock {
     }
 }
 
+impl RawSpinlock {
+    pub(crate) unsafe fn unlock_and_swap(&self) -> bool {
+        self.locked.swap(false, Ordering::Release)
+    }
+}
+
 // 3. Export the wrappers. This are the types that your users will actually use.
 pub type Mutex<T> = lock_api::Mutex<RawSpinlock, T>;
 pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, RawSpinlock, T>;

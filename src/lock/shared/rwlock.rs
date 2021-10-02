@@ -1,4 +1,4 @@
-use lock_api::{GuardSend, RawRwLock};
+use lock_api::{GuardNoSend, GuardSend, RawRwLock};
 
 pub use super::super::spin::RawRwLock as RawSpinRwLock;
 use crate::{
@@ -17,7 +17,7 @@ unsafe impl RawRwLock for RawSharedRwLock {
         internal: RawSpinRwLock::INIT,
     };
 
-    type GuardMarker = GuardSend;
+    type GuardMarker = GuardNoSend;
 
     fn lock_shared(&self) {
         debug!(

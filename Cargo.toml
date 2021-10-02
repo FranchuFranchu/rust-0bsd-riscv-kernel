@@ -18,6 +18,7 @@ zerocopy = "*"
 spin = {features = ["lock_api"]}
 async-trait = "0.1"
 # Nightly feature is to make Mutex::new() a const fn
+downcast-rs = { version = "1.2.0", default-features = false }
 lock_api = {version = "0.4", features = ["nightly"]}
 
 [profile.dev]

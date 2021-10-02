@@ -9,7 +9,7 @@ use itertools::Itertools;
 use volatile_register::{RO, RW, WO};
 
 use self::block::VirtioBlockDevice;
-use crate::{lock::shared::Mutex, paging::PAGE_ALIGN};
+use crate::{lock::shared::{Mutex, RwLock}, paging::PAGE_ALIGN};
 
 // from xv6
 pub enum StatusField {
@@ -428,8 +428,10 @@ impl SplitVirtqueue {
     }
 }
 
+use crate::drivers::traits::block::GenericBlockDevice;
+
 pub enum VirtioDriver {
-    Block(Arc<Mutex<VirtioBlockDevice>>),
+    Block(Arc<RwLock<dyn GenericBlockDevice + Send + Sync + Unpin>>),
 }
 
 use core::task::Poll;
@@ -662,7 +664,9 @@ impl VirtioDevice {
 }
 
 pub trait VirtioDeviceType {
-    fn configure(device: Arc<Mutex<VirtioDevice>>) -> Result<Arc<Mutex<Self>>, ()>
+	type Trait: ?Sized;
+
+    fn configure(device: Arc<Mutex<VirtioDevice>>) -> Result<Arc<RwLock<Self::Trait>>, ()>
     where
         Self: Sized;
 

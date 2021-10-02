@@ -219,8 +219,6 @@ pub unsafe extern "C" fn trap_handler(
                 let meta = get_this_hart_meta().unwrap();
                 let interrupt_id = meta.plic.claim_highest_priority();
 
-                info!("Extenral interrupt {}", interrupt_id);
-
                 external_interrupt::external_interrupt(interrupt_id);
 
                 meta.plic.complete(interrupt_id);

@@ -12,15 +12,7 @@ use core::{
     task::{RawWaker, RawWakerVTable, Waker},
 };
 
-use crate::{
-    asm::do_supervisor_syscall_0,
-    context_switch,
-    cpu::{self, load_hartid, read_sscratch, write_sscratch, Registers},
-    hart::get_this_hart_meta,
-    lock::shared::RwLock,
-    scheduler::schedule_next_slice,
-    trap::{use_boot_frame_if_necessary, TrapFrame},
-};
+use crate::{asm::do_supervisor_syscall_0, context_switch, cpu::{self, load_hartid, read_sscratch, write_sscratch, Registers}, hart::get_this_hart_meta, lock::shared::RwLock, scheduler::schedule_next_slice, trap::{TrapFrame, in_interrupt_context, use_boot_frame_if_necessary}};
 
 pub const TASK_STACK_SIZE: usize = 4096 * 8;
 pub const PROCESS_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
@@ -104,6 +96,15 @@ impl Process {
         let frame_pointer =
             Pin::as_ref(&self.trap_frame).get_ref() as *const TrapFrame as *mut TrapFrame;
 
+        let (time, perf, cycle): (usize, usize, usize);
+        
+        
+        unsafe { llvm_asm!("csrr $0, time" : "=r"(time) ::: "volatile") };
+        unsafe { llvm_asm!("csrr $0, instret" : "=r"(perf) ::: "volatile") };
+        unsafe { llvm_asm!("csrr $0, cycle" : "=r"(cycle) ::: "volatile") };
+
+        info!("{:?} {:?} {:?}", perf, cycle, time);
+
         info!(
             "Switch to frame at \x1b[32m{:?}\x1b[0m (PC {:x} NAME {:?} HART {})",
             frame_pointer,
@@ -113,6 +114,7 @@ impl Process {
         );
 
         //info!("{:?}", PROCESSES.read().iter().filter(|(k, v)| **k != self.trap_frame.pid).map(|(k, v)| v.read().name.clone()).collect() : Vec<_>);
+        /*
         info!(
             "count {:?}",
             PROCESSES
@@ -127,6 +129,7 @@ impl Process {
                 .count()
                 + 1
         );
+        */
 
         self.state = ProcessState::Running;
 
@@ -263,10 +266,25 @@ pub fn allocate_pid() -> usize {
     pid
 }
 
+
+pub fn allocate_pid_lockfree(processes: &BTreeMap<usize, Arc<RwLock<Process>>>) -> usize {
+    let mut pid = 2;
+    for this_pid in pid.. {
+        if !processes.contains_key(&this_pid) {
+            pid = this_pid;
+            break;
+        }
+    }
+    pid
+}
+
 /// Creates a supervisor process and returns PID
 /// SAFETY: Only when function is a valid function pointer (with)
 pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
-    let pid = allocate_pid();
+    // Hold this guard for as much time as possible
+    // to prevent a race condition on allocate_pid
+    let mut guard = PROCESSES.write();
+    let pid = allocate_pid_lockfree(&*guard);
 
     let trapframe_box = Box::new(TrapFrame::zeroed());
     let trapframe_box = Pin::new(trapframe_box);
@@ -290,6 +308,13 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
     process.trap_frame.pc = function;
     process.trap_frame.pid = pid;
     process.trap_frame.hartid = 0xBADC0DE;
+    let process_stack = alloc::vec![0; TASK_STACK_SIZE].into_boxed_slice();
+    process.trap_frame.interrupt_stack =
+        process_stack.as_ptr() as usize + TASK_STACK_SIZE - 0x10;
+        
+    
+    
+    Box::leak(process_stack);
 
     // Create a small stack for this process
     let process_stack = alloc::vec![0; TASK_STACK_SIZE].into_boxed_slice();
@@ -312,7 +337,7 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
     // Schedule the process
     PROCESS_SCHED_QUEUE.write().push(Arc::downgrade(&process));
 
-    PROCESSES.write().insert(pid, process);
+    guard.insert(pid, process);
 
     pid
 }
@@ -404,6 +429,7 @@ pub fn idle_forever_entry_point() {
 /// Starts a process that wfi()s once, immediately switches to the process, then exits.
 /// Must be called from an interrupt context.
 pub fn idle() -> ! {
+    assert!(in_interrupt_context());
     use alloc::format;
     let this_process = weak_get_process(&Process::this_pid()).upgrade();
 

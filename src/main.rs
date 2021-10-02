@@ -35,13 +35,7 @@ use core::{
 
 use process::PROCESSES;
 
-use crate::{
-    cpu::{load_hartid, read_sscratch},
-    hart::get_hart_meta,
-    paging::Paging,
-    plic::Plic0,
-    process::delete_process,
-};
+use crate::{cpu::{load_hartid, read_sscratch}, hart::get_hart_meta, paging::Paging, plic::Plic0, process::delete_process, test_task::{test_task, test_task_2}};
 
 #[macro_use]
 extern crate log;
@@ -87,7 +81,7 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
     // SAFETY: We're the only hart, there's no way the data gets changed by someone else meanwhile
     unsafe { BOOT_FRAME.hartid = hartid }
     unsafe { BOOT_FRAME.pid = 1 }
-    unsafe { BOOT_FRAME.interrupt_stack = &_stack_start as *const _ as usize }
+    unsafe { BOOT_FRAME.interrupt_stack = &_stack_start as *const _ as usize - 0x10 }
 
     // SAFETY: BOOT_FRAME has a valid trap frame value so this doesn't break the rest of the kernel
     unsafe { crate::cpu::write_sscratch(&BOOT_FRAME as *const trap::TrapFrame as usize) }
@@ -115,6 +109,8 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
     // Initialize the interrupt waker system
     interrupt_context_waker::init();
 
+    unsafe { println!("{:p}", &_stack_start) };
+    
     // Setup paging
     // SAFETY: If identity mapping did its thing right, then nothing should change
     #[cfg(target_arch = "riscv64")]
@@ -164,9 +160,7 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
         llvm_asm!("csrw sstatus, $0" :: "r"(sstatus));
     }
     let mut tab = RootTable(unsafe { &mut paging::ROOT_PAGE });
-    tab.map(0x20000000, 0x20001000, 0x200000, 15);
-
-    loop {}
+    //tab.map(0x20000000, 0x20001000, 0x200000, 15);
 
     use alloc::borrow::ToOwned;
     process::new_supervisor_process_with_name(test_task::test_task_3, "disk-test".to_owned());
@@ -175,6 +169,10 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
         "setup-devices".to_owned(),
     );
 
+    /*process::new_supervisor_process_with_name(
+        test_task_2,
+        "test-task-2".to_owned(),
+    );*/
     unsafe { hart::start_all_harts(new_hart as usize) };
 
     scheduler::schedule_next_slice(0);
@@ -194,6 +192,7 @@ fn panic(info: &PanicInfo) -> ! {
         cpu::write_sie(0);
     }
     HART_PANIC_COUNT.fetch_add(1, Ordering::SeqCst);
+    unsafe { std_macros::OUTPUT_LOCK.force_unlock() };
     if let Some(e) = unsafe { read_sscratch().as_ref() } {
         if e.is_double_faulting() {
             use core::fmt::Write;
@@ -202,10 +201,9 @@ fn panic(info: &PanicInfo) -> ! {
                 "\n\x1b[1;31mDouble fault, hart {}\x1b[0m\n",
                 load_hartid()
             );
-            loop {}
+            loop {};
         }
     }
-    println!("{:?}", info.message());
 
     if PROCESSES
         .read()

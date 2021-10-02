@@ -89,11 +89,11 @@ pub unsafe fn call_sbi_2(
 		mv a7, $2
 		mv a6, $3
 		mv a0, $4
-		mv a0, $5
+		mv a1, $5
 		ecall
 		mv $0, a0
 		mv $1, a1
-	" : "=r"(error_code), "=r"(return_value) : "r"(extension_id), "r"(function_id), "r"(a0), "r"(a1));
+	" : "=r"(error_code), "=r"(return_value) : "r"(extension_id), "r"(function_id), "r"(a0), "r"(a1):: "volatile");
 
     if error_code == 0 {
         Ok(return_value)

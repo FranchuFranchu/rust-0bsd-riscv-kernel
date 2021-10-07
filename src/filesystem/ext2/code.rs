@@ -1,8 +1,8 @@
 use core::ops::{Add, Div, Sub};
 
 use alloc::boxed::Box;
-
-use super::structures::{BlockGroupDescriptor, DirectoryEntry, Inode, Superblock};
+use kernel_io::Read;
+use super::structures::{BlockGroupDescriptor, DirectoryEntry, Inode, OwnedDirectoryEntry, Superblock};
 use crate::{drivers::traits::block::{GenericBlockDevice, GenericBlockDeviceExt, GenericBlockDeviceError}, lock::shared::{RwLock, Mutex}};
 
 use alloc::sync::Arc;
@@ -25,7 +25,15 @@ trait DivCeil {
 pub enum Ext2Error {
     OutOfBounds(usize),
     BlockDeviceError(GenericBlockDeviceError),
+    IoError(kernel_io::Error),
     Unknown,
+}
+
+impl From<kernel_io::Error> for Ext2Error {
+    // add code here
+    fn from(other: kernel_io::Error) -> Self {
+        Self::IoError(other)
+    }
 }
 
 impl From<()> for Ext2Error {
@@ -122,7 +130,7 @@ impl Ext2 {
         let mut ret = (ret.0, ret.1.map_err(|s| (s.into(): Ext2Error)));
         ret
     }
-    pub async fn find_entry_in_directory(&self, directory: u32, name: &str) -> Result<u32> {
+    pub async fn find_entry_in_directory(&self, directory: u32, name: &str) -> Result<Option<OwnedDirectoryEntry>> {
         let mut handle = self.inode_handle(directory).await?;
         
         while handle.will_read_all(core::mem::size_of::<DirectoryEntry>()) {
@@ -149,10 +157,48 @@ impl Ext2 {
             
             let entry = unsafe { (buf.as_ptr() as *const DirectoryEntry).as_ref().unwrap() };
             
-            println!("{:?}", unsafe { core::str::from_utf8(entry.get_name()).unwrap() });
+            let this_name =  unsafe { core::str::from_utf8(entry.get_name()).unwrap() };
+            info!("{:?} {:?}", this_name, name);
+            
+            if this_name == name {
+                return Ok(Some(OwnedDirectoryEntry::from((entry, this_name))));
+            }
             
         }
-        Ok(0)
+        Ok(None)
+    }
+    pub async fn get_relative_path(&self, parent: u32, path: &str) -> Result<Option<u32>> {
+        let mut current_inode = parent;
+        for (index, component) in path.split("/").enumerate() {
+            // TODO how to improve this?
+            let entry = self.find_entry_in_directory(current_inode, component).await?;
+            info!("{:?}", component);
+            let entry = match entry {
+                Some(expr) => expr,
+                None => return Ok(None),
+            };
+            
+            println!("{:?}", index);
+            
+            // If this is the last component, return the inode
+            if path.chars().filter(|s| s == &'/').count() == index {
+                return Ok(Some(entry.inode))
+            }
+            if entry.file_type != 2 {
+                // Not a directory, error out
+                return Ok(None)
+            }
+            current_inode = entry.inode;
+        }
+        Ok(None)
+    }
+    pub async fn get_path(&self, path: &str) -> Result<Option<u32>> {
+        let path = if path.chars().nth(0).unwrap() == '/' {
+            &path[1..]
+        } else {
+            path
+        };
+        self.get_relative_path(2, path).await
     }
     pub async fn load_superblock(&self) -> Result<()> {
         let superblock: Box<[u8]> = GenericBlockDeviceExt::read(&*self.device, 2, 512*2).await?;
@@ -177,8 +223,10 @@ pub struct InodeHandle<'a> {
     position: usize,
 }
 
-impl<'a> InodeHandle<'a> {
-    pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+#[async_trait]
+impl<'a> Read for InodeHandle<'a> {
+    type Error = Ext2Error;
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         let block_size: usize = self.fs.block_size() as usize;
         
         let mut position_in_buffer = 0;
@@ -199,6 +247,9 @@ impl<'a> InodeHandle<'a> {
         }
         Ok(position_in_buffer)
     }
+}
+
+impl<'a> InodeHandle<'a> {
     pub fn will_read_all(&mut self, length: usize) -> bool {
         (self.position + length) <= (self.inode.size as usize)
     }

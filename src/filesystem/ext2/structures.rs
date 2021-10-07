@@ -1,3 +1,5 @@
+use core::str::Utf8Error;
+
 #[derive(Clone, Debug)]
 #[repr(C)]
 pub struct Superblock {
@@ -347,6 +349,35 @@ pub struct DirectoryEntry {
     
     pub name: [u8; 0],
 }
+
+#[derive(Debug)]
+pub struct OwnedDirectoryEntry {
+    /// 32bit inode number of the file entry.  A value of 0 indicate that the entry
+    /// is not used.
+    pub inode: u32,
+
+    /// 8bit unsigned value used to indicate file type. 
+    pub file_type: u8,
+    
+    pub name: alloc::string::String,
+}
+
+impl From<(&DirectoryEntry, &str)> for OwnedDirectoryEntry {
+    fn from(other: (&DirectoryEntry, &str)) -> Self {
+        OwnedDirectoryEntry {
+            inode: other.0.inode,
+            file_type: other.0.file_type,
+            name: alloc::string::String::from(other.1),
+        }
+    }
+}
+
+impl OwnedDirectoryEntry {
+    pub unsafe fn from_get_name(other: &DirectoryEntry) -> Result<Self, Utf8Error> {
+        Ok(Self::from((other, core::str::from_utf8(other.get_name())?)))
+    }
+}
+
 
 impl DirectoryEntry {
     pub unsafe fn get_name(&self) -> &[u8] {

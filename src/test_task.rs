@@ -181,7 +181,11 @@ pub fn test_task_3() {
         ext2.load_superblock().await.unwrap();
         
         info!("{:?}", ext2.read_inode(2).await.unwrap());
-        let mut inode = ext2.find_entry_in_directory(2, "test").await;
+        let mut inode = ext2.get_path("/file2").await.unwrap().unwrap();
+        let mut handle = ext2.inode_handle(inode).await.unwrap();
+        use kernel_io::Read;
+        let t = handle.read_to_end_new().await.unwrap();
+        println!("File contents: {:?}", core::str::from_utf8(&t.1).unwrap());
 		
         //crate::sbi::shutdown(0);
     };

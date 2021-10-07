@@ -15,20 +15,20 @@ export BITS=$1
 
 if [ $GDB == "yes" ]; then
 	lxterminal -e 'riscv'$BITS'-elf-gdb target/'$ARCH'-unknown-none-elf/debug/rust-0bsd-riscv-kernel\
-	-ex "target remote localhost:1234"\
+	-ex "target remote cuarto.localdomain:1234"\
 	-ex "break rust_0bsd_riscv_kernel::panic"\
 	-ex "alias print_hartids = p [\$mhartid, rust_0bsd_riscv_kernel::cpu::load_hartid()]"\
 	-ex "alias phids = print_hartids"\
 	-ex "set history save on"\
-	'
-	export QEMUOPTS=-s $QEMUOPTS
+	' &
+	export QEMUOPTS="-S -s $QEMUOPTS"
 fi
 
-qemu-system-riscv$BITS -s \
+qemu-system-riscv$BITS $QEMUOPTS \
 	-machine virt \
 	-cpu rv$BITS \
 	-chardev stdio,id=console,mux=on \
-	-d unimp,guest_errors,int \
+	-d unimp,guest_errors \
 	-blockdev driver=file,filename=drive.img,node-name=hda \
 	-device virtio-blk-device,drive=hda \
 	-smp 1 \

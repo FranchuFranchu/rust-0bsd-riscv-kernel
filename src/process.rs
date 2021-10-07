@@ -103,9 +103,9 @@ impl Process {
         unsafe { llvm_asm!("csrr $0, instret" : "=r"(perf) ::: "volatile") };
         unsafe { llvm_asm!("csrr $0, cycle" : "=r"(cycle) ::: "volatile") };
 
-        info!("{:?} {:?} {:?}", perf, cycle, time);
+        //debug!("{:?} {:?} {:?}", perf, cycle, time);
 
-        info!(
+        debug!(
             "Switch to frame at \x1b[32m{:?}\x1b[0m (PC {:x} NAME {:?} HART {})",
             frame_pointer,
             unsafe { (*frame_pointer).pc },
@@ -439,8 +439,6 @@ pub fn idle() -> ! {
         crate::trap::use_boot_frame_if_necessary(&*process.trap_frame as _);
         info!("F {:?}", read_sscratch());
         process.state = ProcessState::Pending;
-    } else {
-        info!("No process");
     }
     let pid = new_supervisor_process_with_name(
         idle_entry_point,

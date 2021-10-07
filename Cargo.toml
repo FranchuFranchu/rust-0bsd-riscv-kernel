@@ -20,6 +20,7 @@ async-trait = "0.1"
 # Nightly feature is to make Mutex::new() a const fn
 downcast-rs = { version = "1.2.0", default-features = false }
 lock_api = {version = "0.4", features = ["nightly"]}
+kernel_io = { path = "src/crates/kernel_io" }
 
 [profile.dev]
 opt-level = 0

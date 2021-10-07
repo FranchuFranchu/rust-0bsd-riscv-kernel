@@ -87,7 +87,7 @@ impl TrapFrame {
 /// If sscratch equals original_trap_frame, then set sscratch to the boot frame for this hart
 pub fn use_boot_frame_if_necessary(original_trap_frame: *const TrapFrame) {
     if core::ptr::eq(read_sscratch(), original_trap_frame) {
-        info!("Changed frame");
+        debug!("Changed frame");
         unsafe {
             get_this_hart_meta()
                 .unwrap()
@@ -100,7 +100,7 @@ pub fn use_boot_frame_if_necessary(original_trap_frame: *const TrapFrame) {
 
 impl Drop for TrapFrame {
     fn drop(&mut self) {
-        warn!("Trap frame for pid {} dropped", self.pid);
+        debug!("Trap frame for pid {} dropped", self.pid);
         if self as *const Self == read_sscratch() {
             warn!("sscratch contains a dropped trap frame! Use-after-free is likely to happen");
         }

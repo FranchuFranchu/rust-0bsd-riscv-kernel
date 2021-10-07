@@ -4,3 +4,4 @@
 pub mod interrupt;
 pub mod shared;
 pub mod spin;
+pub mod simple_shared;

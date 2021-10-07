@@ -1,11 +1,14 @@
 use core::ffi::c_void;
 
 use proxy::ProxyAllocator;
-use slab_allocator_rs::LockedHeap as LockedSlabAllocator;
+use slab_allocator_rs::Heap as SlabAllocator;
+
+
+
 
 #[global_allocator]
-pub static ALLOCATOR: ProxyAllocator<LockedSlabAllocator> =
-    ProxyAllocator(LockedSlabAllocator::empty());
+pub static ALLOCATOR: shared_mutex_allocator::MutexWrapper<Option<SlabAllocator>> =
+    shared_mutex_allocator::MutexWrapper::empty();
 
 // Linker symbols
 extern "C" {
@@ -24,7 +27,8 @@ pub fn init() {
     heap_size *= slab_allocator_rs::MIN_HEAP_SIZE;
 
     // SAFETY: This relies on the assumption that heap_end and heap_start are valid addresses (which are provided by the linker script)
-    unsafe { ALLOCATOR.0.init(heap_start, heap_size) };
+    unsafe { ALLOCATOR.init(heap_start, heap_size) };
 }
 
 pub mod proxy;
+pub mod shared_mutex_allocator;

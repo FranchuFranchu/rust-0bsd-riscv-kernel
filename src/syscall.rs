@@ -92,7 +92,8 @@ pub fn syscall_yield(frame: &mut TrapFrame) {
 }
 
 #[no_mangle]
-pub extern "C" fn syscall_on_interrupt_disabled() {
+pub unsafe extern "C" fn syscall_on_interrupt_disabled() {
+    crate::std_macros::OUTPUT_LOCK.force_unlock();
     error!("Can't make a syscall while interrupts are disabled! (Maybe you're holding a lock while making a syscall?)");
     loop {}
 }

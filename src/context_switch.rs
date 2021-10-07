@@ -53,7 +53,7 @@ pub fn schedule_and_switch() -> ! {
             loop {};
         } else {
             // Just wait for something to happen.
-            warn!("All processes have yielded");
+            debug!("All processes have yielded");
             process::idle()
         }
     }

@@ -35,7 +35,7 @@ use core::{
 
 use process::PROCESSES;
 
-use crate::{cpu::{load_hartid, read_sscratch}, hart::get_hart_meta, paging::Paging, plic::Plic0, process::delete_process, test_task::{test_task, test_task_2}};
+use crate::{backtrace::backtrace, cpu::{load_hartid, read_sscratch}, hart::get_hart_meta, paging::Paging, plic::Plic0, process::delete_process, test_task::{test_task, test_task_2}};
 
 #[macro_use]
 extern crate log;
@@ -169,6 +169,7 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
         "setup-devices".to_owned(),
     );
 
+
     /*process::new_supervisor_process_with_name(
         test_task_2,
         "test-task-2".to_owned(),
@@ -205,10 +206,14 @@ fn panic(info: &PanicInfo) -> ! {
         }
     }
 
-    if PROCESSES
-        .read()
-        .contains_key(&crate::process::Process::this_pid())
+    let lock = match PROCESSES.try_write() {
+        Some(e) => {e}
+        None => {unsafe { PROCESSES.force_unlock_write(); PROCESSES.write() }}
+    };
+
+    if false//lock.contains_key(&crate::process::Process::this_pid())
     {
+        drop(lock);
         delete_process(crate::process::Process::this_pid());
     }
 
@@ -280,6 +285,7 @@ pub fn status_summary() {
 
 pub mod allocator;
 pub mod asm;
+pub mod backtrace;
 pub mod context_switch;
 pub mod device_setup;
 pub mod drivers;

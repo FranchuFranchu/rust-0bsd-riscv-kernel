@@ -1,5 +1,7 @@
 use crate::lock::simple_shared::Mutex;
 use core::ptr::NonNull;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
 use slab_allocator_rs::Heap as SlabAllocator;
 use core::alloc::{Layout, GlobalAlloc};
 
@@ -15,10 +17,13 @@ impl<T> MutexWrapper<T> {
 	}
 }
 
+static a: AtomicUsize = AtomicUsize::new(0);
 
 unsafe impl GlobalAlloc for MutexWrapper<Option<SlabAllocator>> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        self.0.lock().as_mut().unwrap().allocate(layout).unwrap().as_ptr()
+        //println!("{:?} {}", layout.size(), a.load(Ordering::SeqCst));
+        a.fetch_add(layout.size(), Ordering::SeqCst);
+        self.0.lock().as_mut().unwrap().allocate(layout).expect("Out of memory!").as_ptr()
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
@@ -32,7 +37,9 @@ impl MutexWrapper<Option<SlabAllocator>> {
 	}
 	
     pub unsafe fn init(&self, heap_start_addr: usize, size: usize) {
+        info!("initialized");
         *self.0.lock() = Some(SlabAllocator::new(heap_start_addr, size));
+        println!("{:?}", size);
     }
 
 }

@@ -4,12 +4,13 @@ pub mod block;
 
 use alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
 use core::{alloc::Layout, convert::TryInto, future::Future, slice, task::Waker};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 use itertools::Itertools;
 use volatile_register::{RO, RW, WO};
 
 use self::block::VirtioBlockDevice;
-use crate::{lock::shared::{Mutex, RwLock}, paging::PAGE_ALIGN};
+use crate::{cpu::read_time, lock::shared::{Mutex, RwLock}, paging::PAGE_ALIGN};
 
 // from xv6
 pub enum StatusField {
@@ -143,13 +144,13 @@ impl<'a> Iterator for SplitVirtqueueDescriptorChainIterator<'a> {
         if self.pointed_chain == None {
             return None;
         }
-
+        
         let descriptor = self.queue.get_descriptor(self.pointed_chain.unwrap());
         if descriptor.address == 0 {
             return None;
         }
         if descriptor.flags & 1 == 0 {
-            self.pointed_chain = None
+            self.pointed_chain = None;
         } else {
             self.pointed_chain = Some(descriptor.next)
         }
@@ -162,6 +163,13 @@ impl<'a> Iterator for SplitVirtqueueDescriptorChainIterator<'a> {
     }
 }
 
+
+impl<'a> SplitVirtqueueDescriptorChainIterator<'a> {
+    fn pointed_chain(&self) -> Option<u16> {
+        self.pointed_chain
+    }
+}
+    
 #[repr(C)]
 pub struct SplitVirtqueueUsedRing {
     idx: u32,
@@ -554,6 +562,7 @@ impl VirtioDevice {
     }
 
     pub fn queue_ready(&mut self, queue: u16) {
+        info!("{} {:?}", read_time(), "Ready");
         unsafe {
             (*self.configuration).queue_notify.write(queue.into());
         }
@@ -596,6 +605,10 @@ impl VirtioDevice {
     /// The reason this takes a mutex to self is to allow the waker to lock the VirtioDevice
     /// without deadlocking
     pub fn on_interrupt(this: &Mutex<Self>) {
+        
+        static A: AtomicUsize = AtomicUsize::new(0);
+        A.fetch_add(1, Ordering::Relaxed);
+        info!("{} {:?}", read_time(), "Int");
         let interrupt_cause = unsafe { (*this.lock().configuration).interrupt_status.read() };
         if (interrupt_cause & (1 << 0)) != 0 {
             // Used Buffer Notification
@@ -605,20 +618,25 @@ impl VirtioDevice {
                 let b = this.lock().next_changed_used_ring_queue();
                 b
             } {
-                // First we create a list of wakers with the VirtioDevice locked
-                let wakers;
                 {
-                    let mut this = this.lock();
-                    this.changed_queue = Some(queue_id);
-                    wakers = this.waiting_wakers.clone();
-                }
+                    // First we create a list of wakers with the VirtioDevice locked
+                    let wakers;
+                    {
+                        let mut this = this.lock();
+                        this.changed_queue = Some(queue_id);
+                        wakers = this.waiting_wakers.clone();
+                    }
 
-                // Then we wake all of them with the VirtioDevice unlocked
-                for i in wakers {
-                    i.wake_by_ref()
+                    // Then we wake all of them with the VirtioDevice unlocked
+                    for i in wakers {
+                        i.wake_by_ref()
+                    }
                 }
             }
         }
+        A.fetch_sub(1, Ordering::Relaxed);
+        
+        println!("{:?}", A.load(Ordering::Relaxed));
         // TODO this won't work well if more than one waker is waiting on the device!
         // this.lock().changed_queue = None;
 

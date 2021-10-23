@@ -41,9 +41,6 @@ unsafe impl RawRwLock for RawSpinRwLock {
     }
 
     unsafe fn unlock_shared(&self) {
-        if self.value.load(Ordering::SeqCst) == 0 {
-            loop {}
-        };
         self.value.fetch_sub(SHARED, Ordering::SeqCst);
     }
 
@@ -72,9 +69,6 @@ unsafe impl RawRwLock for RawSpinRwLock {
     }
 
     unsafe fn unlock_exclusive(&self) {
-        if self.value.load(Ordering::SeqCst) == 0 {
-            loop {}
-        };
         self.value.fetch_sub(WRITER, Ordering::SeqCst);
     }
 

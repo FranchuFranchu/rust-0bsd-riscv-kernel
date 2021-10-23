@@ -54,6 +54,7 @@ SECTIONS
   {
       *(.eh_frame)
   }
+  . = ALIGN(4096);
   PROVIDE(_stack_end = .);
   
   /* Make 64kb of space for stack */

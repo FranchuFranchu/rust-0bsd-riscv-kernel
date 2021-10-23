@@ -5,11 +5,8 @@ use alloc::{
     task::Wake,
     vec::Vec,
 };
-use core::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Waker},
-};
+use core::{future::Future, pin::Pin, slice, task::{Context, Waker}};
+use core::mem::size_of_val;
 
 use super::{SplitVirtqueue, VirtioDevice, VirtioDeviceType};
 use crate::{interrupt_context_waker::InterruptContextWaker, lock::shared::{Mutex, RwLock}};
@@ -126,7 +123,7 @@ impl VirtioBlockDevice {
         let status = alloc::vec![0xFFu8; 1].into_boxed_slice();
 
         let mut last = vq_lock.new_descriptor_from_boxed_slice(status, true, None);
-
+        
         if future.header.r#type == 1 {
             last = vq_lock.new_descriptor_from_boxed_slice(
                 future.buffer.take().unwrap(),
@@ -140,7 +137,12 @@ impl VirtioBlockDevice {
                 Some(last),
             );
         }
-        last = vq_lock.new_descriptor_from_sized(&future.header, false, Some(last));
+        //println!("Ptr {:?} {:?}", s.as_ptr() as *mut u8, s.len());
+        let slice = unsafe { slice::from_raw_parts(&future.header as *const RequestHeader as *const u8, size_of_val(&future.header)) };
+        use alloc::borrow::ToOwned;
+        last = vq_lock.new_descriptor_from_boxed_slice(slice.to_owned().into_boxed_slice(), false, Some(last));
+        
+        
 
         // Return the head of the descriptor chain
         last
@@ -155,20 +157,20 @@ impl VirtioBlockDevice {
 
     /// Sets up a callback future for when the device has finished processing a request we made
     fn poll_device(&mut self) {
-        let mut device_ref = self.device.lock();
-        let this_weak = self.this.clone();
-        // Note that here we aren't polling the BlockDeviceRequest, but rather the VirtioDevice
-        // (where polling means waiting for a used ring to be available)
-        let result = Pin::new(&mut *device_ref).poll(&mut Context::from_waker(
-            &Arc::new(InterruptContextWaker(Box::new(move || {
-                // Now we can recreate self based on the weak pointer we moved
-                // and then poll it again.
-                // The value should be Ready now
-                let this = this_weak.upgrade().unwrap().write().poll_device();
-            })))
-            .into(),
-        ));
-        drop(device_ref);
+        let result = {
+            let mut device_ref = self.device.lock();
+            let this_weak = self.this.clone();
+            // Note that here we aren't polling the BlockDeviceRequest, but rather the VirtioDevice
+            // (where polling means waiting for a used ring to be available)
+            let waker = Arc::new(InterruptContextWaker(Box::new(move || {
+                    // Now we can recreate self based on the weak pointer we moved
+                    // and then poll it again.
+                    // The value should be Ready now
+                    let this = this_weak.upgrade().unwrap().write().poll_device();
+            })));
+            Pin::new(&mut *device_ref).poll(&mut Context::from_waker(&waker.into()))
+        };
+            
 
         if let Poll::Ready(queue_idx) = result {
             assert!(queue_idx == 0);
@@ -179,7 +181,8 @@ impl VirtioBlockDevice {
             // Create the iterator for this descriptor chain
             let mut descriptor_chain_data_iterator = vq_lock.pop_used_element_to_iterator();
             let descriptor_id = descriptor_chain_data_iterator.pointed_chain.unwrap();
-
+            /*
+            
             let data: Vec<u8> = descriptor_chain_data_iterator
                 // Join all the &[u8]s together into one iterator
                 .flatten()
@@ -188,20 +191,20 @@ impl VirtioBlockDevice {
                 .collect();
 
             let request_body = &data[core::mem::size_of::<RequestHeader>()..data.len() - 1];
-
-            // Now, try to recreate the Box<[u8]> that was used to create this
+            */
+            // Now, try to recreate the Box<[u8]> that were used to create this
             // Reconstruct the buffer box
-            let buffer_start_ptr =
-                descriptor_chain_data_iterator.nth(1).unwrap().as_ptr() as *mut u8;
-            let buffer_len = request_body.len();
-            // SAFETY: This is constructed on do_request, and I think this is the "correct" way to restore it
-            let buffer_box = unsafe {
-                Box::from_raw(core::slice::from_raw_parts_mut(
-                    buffer_start_ptr,
-                    buffer_len,
-                ))
-            };
-
+            let mut components = descriptor_chain_data_iterator.map(|s| {
+                unsafe {
+                    Box::from_raw(core::slice::from_raw_parts_mut(
+                        s.as_ptr() as *mut u8,
+                        s.len(),
+                    ))
+                }
+               
+            });
+            let buffer_box = components.nth(1).unwrap();
+            
             self.header_buffers.insert(descriptor_id, buffer_box);
 
             let items = self
@@ -219,6 +222,7 @@ impl VirtioBlockDevice {
             for i in items.into_iter() {
                 i.wake_by_ref();
             }
+            
 
             self.waiting_requests.remove(&descriptor_id);
         } else {

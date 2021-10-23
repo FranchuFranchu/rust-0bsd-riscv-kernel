@@ -149,7 +149,8 @@ impl Process {
         new_waker
     }
     pub unsafe fn waker_wake(data: *const ()) {
-        Self::waker_wake_by_ref(data)
+        Self::waker_wake_by_ref(data);
+        Self::waker_drop(data)
     }
     pub unsafe fn waker_wake_by_ref(data: *const ()) {
         // The box re-acquires ownership of the RwLock<Self>
@@ -429,21 +430,23 @@ pub fn idle_forever_entry_point() {
 /// Starts a process that wfi()s once, immediately switches to the process, then exits.
 /// Must be called from an interrupt context.
 pub fn idle() -> ! {
-    assert!(in_interrupt_context());
-    use alloc::format;
-    let this_process = weak_get_process(&Process::this_pid()).upgrade();
+    let pid = {
+        assert!(in_interrupt_context());
+        use alloc::format;
+        let this_process = weak_get_process(&Process::this_pid()).upgrade();
 
-    if let Some(process) = this_process {
-        let mut process = process.write();
-        info!("F {:?}", read_sscratch());
-        crate::trap::use_boot_frame_if_necessary(&*process.trap_frame as _);
-        info!("F {:?}", read_sscratch());
-        process.state = ProcessState::Pending;
-    }
-    let pid = new_supervisor_process_with_name(
-        idle_entry_point,
-        format!("Idle process for hart {}", load_hartid()),
-    );
+        if let Some(process) = this_process {
+            let mut process = process.write();
+            info!("F {:?}", read_sscratch());
+            crate::trap::use_boot_frame_if_necessary(&*process.trap_frame as _);
+            info!("F {:?}", read_sscratch());
+            process.state = ProcessState::Pending;
+        }
+        new_supervisor_process_with_name(
+            idle_entry_point,
+            format!("Idle process for hart {}", load_hartid()),
+        )
+    };
     schedule_next_slice(1);
     context_switch::context_switch(&pid)
 }

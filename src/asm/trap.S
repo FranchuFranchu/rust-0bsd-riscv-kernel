@@ -22,6 +22,11 @@
 	flx	f\i, ((NUM_GP_REGS+(\i))*XLEN)(\basereg)
 .endm
 
+# IN: t6: Trap frame pointer
+.macro store_to_trap_frame 
+.endm
+
+
 .macro store_volatile_registers
 
 
@@ -193,4 +198,12 @@ do_syscall_internal:
 	mv	ra, a0
 	
 	restore_volatile_registers
+	ret
+
+.global store_to_trap_frame
+
+store_to_trap_frame:
+	csrrw a0, sscratch, a0
+	store_volatile_registers
+	csrrw a0, sscratch, a0
 	ret

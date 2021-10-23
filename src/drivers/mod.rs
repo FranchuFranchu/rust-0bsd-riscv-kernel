@@ -1,4 +1,3 @@
-pub mod filesystem;
 pub mod traits;
 pub mod uart;
 pub mod virtio;

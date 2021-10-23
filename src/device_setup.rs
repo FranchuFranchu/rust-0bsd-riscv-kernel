@@ -8,10 +8,7 @@ use core::{
 };
 
 use crate::{
-    drivers::{
-        virtio,
-        virtio::{block::VirtioBlockDevice, VirtioDevice, VirtioDeviceType},
-    },
+    drivers::virtio::{VirtioDevice, VirtioDeviceType},
     external_interrupt::ExternalInterruptHandler,
     fdt::PropertyValue,
     lock::shared::{Mutex, RwLock},

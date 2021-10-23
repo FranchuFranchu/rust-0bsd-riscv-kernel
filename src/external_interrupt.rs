@@ -36,7 +36,7 @@ fn remove_handler(id: u32, function: &Arc<dyn Fn(u32) + Send + Sync>) -> Result<
             // The dyn Fn vtable is only crated once, when the External Interrupt Handler is registered
             // (but i'm not actually sure though)
             #[allow(clippy::vtable_address_comparisons)]
-            Arc::ptr_eq(&r, &function)
+            Arc::ptr_eq(r, function)
         })
         .unwrap();
     v.remove(index);

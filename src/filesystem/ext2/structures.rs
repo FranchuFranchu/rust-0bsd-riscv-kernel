@@ -328,7 +328,6 @@ pub struct Inode {
     pub osd3: u16,
 }
 
-
 #[derive(Debug)]
 #[repr(C)]
 pub struct DirectoryEntry {
@@ -340,13 +339,13 @@ pub struct DirectoryEntry {
     /// current directory entry. This field must have a value at least equal to the
     /// length of the current record.
     pub rec_len: u16,
-    
-    /// 8bit unsigned value indicating how many bytes of character data are contained in the name. 
+
+    /// 8bit unsigned value indicating how many bytes of character data are contained in the name.
     pub name_len: u8,
-    
-    /// 8bit unsigned value used to indicate file type. 
+
+    /// 8bit unsigned value used to indicate file type.
     pub file_type: u8,
-    
+
     pub name: [u8; 0],
 }
 
@@ -356,9 +355,9 @@ pub struct OwnedDirectoryEntry {
     /// is not used.
     pub inode: u32,
 
-    /// 8bit unsigned value used to indicate file type. 
+    /// 8bit unsigned value used to indicate file type.
     pub file_type: u8,
-    
+
     pub name: alloc::string::String,
 }
 
@@ -378,13 +377,11 @@ impl OwnedDirectoryEntry {
     }
 }
 
-
 impl DirectoryEntry {
     pub unsafe fn get_name(&self) -> &[u8] {
         core::slice::from_raw_parts(self.name.as_ptr(), self.name_len.into())
     }
 }
-
 
 struct IndexedDirectoryRoot {
     pub _pad_1: [u8; 9],

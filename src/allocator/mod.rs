@@ -3,11 +3,8 @@ use core::ffi::c_void;
 use proxy::ProxyAllocator;
 use slab_allocator_rs::Heap as SlabAllocator;
 
-
-
-
 #[global_allocator]
-pub static ALLOCATOR: ProxyAllocator<shared_mutex_allocator::MutexWrapper<Option<SlabAllocator>> >=
+pub static ALLOCATOR: ProxyAllocator<shared_mutex_allocator::MutexWrapper<Option<SlabAllocator>>> =
     ProxyAllocator(shared_mutex_allocator::MutexWrapper::empty());
 
 // Linker symbols

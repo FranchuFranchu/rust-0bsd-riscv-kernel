@@ -50,7 +50,7 @@ impl Node {
         // Get the device at a name + unit address, or just the name
         if first_component.contains('@') {
             // Full unit address
-            let (name, address) = first_component.splitn(2, '@').next_tuple().unwrap();
+            let (name, address) = first_component.split_once('@').unwrap();
             if address.is_empty() {
                 // A component ending with an @ allows any unit address (choose the first one then)
                 child = self.children.get(name)?.values().next()?

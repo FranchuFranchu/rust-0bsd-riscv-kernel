@@ -1,11 +1,9 @@
-use lock_api::{GuardNoSend, GuardSend, RawRwLock};
+use lock_api::{GuardNoSend, RawRwLock};
 
 pub use super::super::spin::RawRwLock as RawSpinRwLock;
 use crate::{
     cpu::load_hartid,
-    hart::HART_META,
     lock::shared::{lock_and_disable_interrupts, unlock_and_enable_interrupts_if_necessary},
-    trap::in_interrupt_context,
 };
 
 pub struct RawSharedRwLock {

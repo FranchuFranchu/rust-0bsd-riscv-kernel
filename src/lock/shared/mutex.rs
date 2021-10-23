@@ -1,6 +1,6 @@
 use core::sync::atomic::AtomicUsize;
 
-use lock_api::{GuardNoSend, GuardSend, RawMutex};
+use lock_api::{GuardNoSend, RawMutex};
 
 pub use super::super::spin::RawMutex as RawSpinlock;
 use super::{lock_and_disable_interrupts, unlock_and_enable_interrupts_if_necessary};

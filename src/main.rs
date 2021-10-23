@@ -21,9 +21,7 @@
 )]
 #![cfg_attr(not(test), no_std)]
 #![no_main]
-#![allow(incomplete_features)]
-#![allow(dead_code)]
-#![allow(unused_variables)]
+#![allow(incomplete_features, dead_code, unused_variables, clippy::empty_loop)]
 
 extern crate alloc;
 
@@ -35,7 +33,13 @@ use core::{
 
 use process::PROCESSES;
 
-use crate::{backtrace::backtrace, cpu::{load_hartid, read_sscratch}, hart::get_hart_meta, paging::Paging, plic::Plic0, process::delete_process, test_task::{test_task, test_task_2}};
+use crate::{
+    cpu::{load_hartid, read_sscratch},
+    hart::get_hart_meta,
+    paging::Paging,
+    plic::Plic0,
+    process::delete_process,
+};
 
 #[macro_use]
 extern crate log;
@@ -110,7 +114,7 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
     interrupt_context_waker::init();
 
     unsafe { println!("{:p}", &_stack_start) };
-    
+
     // Setup paging
     // SAFETY: If identity mapping did its thing right, then nothing should change
     #[cfg(target_arch = "riscv64")]
@@ -159,7 +163,7 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
         sstatus |= 1 << 1;
         llvm_asm!("csrw sstatus, $0" :: "r"(sstatus));
     }
-    let mut tab = RootTable(unsafe { &mut paging::ROOT_PAGE });
+    let tab = RootTable(unsafe { &mut paging::ROOT_PAGE });
     //tab.map(0x20000000, 0x20001000, 0x200000, 15);
 
     use alloc::borrow::ToOwned;
@@ -168,7 +172,6 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
         device_setup::setup_devices,
         "setup-devices".to_owned(),
     );
-
 
     /*process::new_supervisor_process_with_name(
         test_task_2,
@@ -202,16 +205,20 @@ fn panic(info: &PanicInfo) -> ! {
                 "\n\x1b[1;31mDouble fault, hart {}\x1b[0m\n",
                 load_hartid()
             );
-            loop {};
+            loop {}
         }
     }
 
     let lock = match PROCESSES.try_write() {
-        Some(e) => {e}
-        None => {unsafe { PROCESSES.force_unlock_write(); PROCESSES.write() }}
+        Some(e) => e,
+        None => unsafe {
+            PROCESSES.force_unlock_write();
+            PROCESSES.write()
+        },
     };
 
-    if false//lock.contains_key(&crate::process::Process::this_pid())
+    if false
+    //lock.contains_key(&crate::process::Process::this_pid())
     {
         drop(lock);
         delete_process(crate::process::Process::this_pid());

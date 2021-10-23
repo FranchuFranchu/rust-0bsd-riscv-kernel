@@ -4,13 +4,15 @@ pub mod block;
 
 use alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
 use core::{alloc::Layout, convert::TryInto, future::Future, slice, task::Waker};
-use core::sync::atomic::{AtomicUsize, Ordering};
 
 use itertools::Itertools;
 use volatile_register::{RO, RW, WO};
 
 use self::block::VirtioBlockDevice;
-use crate::{cpu::read_time, lock::shared::{Mutex, RwLock}, paging::PAGE_ALIGN};
+use crate::{
+    lock::shared::{Mutex, RwLock},
+    paging::PAGE_ALIGN,
+};
 
 // from xv6
 pub enum StatusField {
@@ -144,7 +146,7 @@ impl<'a> Iterator for SplitVirtqueueDescriptorChainIterator<'a> {
         if self.pointed_chain == None {
             return None;
         }
-        
+
         let descriptor = self.queue.get_descriptor(self.pointed_chain.unwrap());
         if descriptor.address == 0 {
             return None;
@@ -163,13 +165,12 @@ impl<'a> Iterator for SplitVirtqueueDescriptorChainIterator<'a> {
     }
 }
 
-
 impl<'a> SplitVirtqueueDescriptorChainIterator<'a> {
     fn pointed_chain(&self) -> Option<u16> {
         self.pointed_chain
     }
 }
-    
+
 #[repr(C)]
 pub struct SplitVirtqueueUsedRing {
     idx: u32,
@@ -207,11 +208,11 @@ impl SplitVirtqueue {
     }
     #[inline]
     fn used_ring_offset(size: &u16) -> usize {
-        Self::align(Self::descriptor_table_size(&size) + Self::available_ring_size(&size))
+        Self::align(Self::descriptor_table_size(size) + Self::available_ring_size(size))
     }
     #[inline]
     fn memory_size(size: &u16) -> usize {
-        Self::used_ring_offset(&size) + Self::align(Self::used_ring_size(&size))
+        Self::used_ring_offset(size) + Self::align(Self::used_ring_size(size))
     }
     fn new(size: u16) -> SplitVirtqueue {
         use core::alloc::GlobalAlloc;
@@ -562,7 +563,6 @@ impl VirtioDevice {
     }
 
     pub fn queue_ready(&mut self, queue: u16) {
-        info!("{} {:?}", read_time(), "Ready");
         unsafe {
             (*self.configuration).queue_notify.write(queue.into());
         }
@@ -605,10 +605,6 @@ impl VirtioDevice {
     /// The reason this takes a mutex to self is to allow the waker to lock the VirtioDevice
     /// without deadlocking
     pub fn on_interrupt(this: &Mutex<Self>) {
-        
-        static A: AtomicUsize = AtomicUsize::new(0);
-        A.fetch_add(1, Ordering::Relaxed);
-        info!("{} {:?}", read_time(), "Int");
         let interrupt_cause = unsafe { (*this.lock().configuration).interrupt_status.read() };
         if (interrupt_cause & (1 << 0)) != 0 {
             // Used Buffer Notification
@@ -634,9 +630,6 @@ impl VirtioDevice {
                 }
             }
         }
-        A.fetch_sub(1, Ordering::Relaxed);
-        
-        println!("{:?}", A.load(Ordering::Relaxed));
         // TODO this won't work well if more than one waker is waiting on the device!
         // this.lock().changed_queue = None;
 
@@ -682,7 +675,7 @@ impl VirtioDevice {
 }
 
 pub trait VirtioDeviceType {
-	type Trait: ?Sized;
+    type Trait: ?Sized;
 
     fn configure(device: Arc<Mutex<VirtioDevice>>) -> Result<Arc<RwLock<Self::Trait>>, ()>
     where

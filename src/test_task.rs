@@ -11,10 +11,7 @@ use core::{
 use crate::{
     asm::do_supervisor_syscall_0,
     cpu,
-    drivers::{
-        traits::block::GenericBlockDevice,
-        virtio::{block::VirtioBlockDevice, VirtioDriver},
-    },
+    drivers::{traits::block::GenericBlockDevice, virtio::VirtioDriver},
     external_interrupt::ExternalInterruptHandler,
     fdt, process,
 };
@@ -63,7 +60,7 @@ pub fn test_task() {
             }
         }
     }
-    loop {};
+    loop {}
 }
 
 pub fn test_task_2() {
@@ -120,7 +117,7 @@ pub fn test_task_3() {
     }
     use alloc::sync::Arc;
 
-    use crate::lock::shared::{Mutex, RwLock};
+    use crate::lock::shared::RwLock;
 
     let exec = crate::future::Executor::new();
     let block = async {
@@ -145,10 +142,9 @@ pub fn test_task_3() {
                 panic!("Block device not found!");
             };
             block_device.clone()
-            
         };
-        
-		/*
+
+        /*
         let mut v: Vec<u8> = Vec::new();
         v.resize(512, 0);
 
@@ -166,29 +162,29 @@ pub fn test_task_3() {
 
         let mut v: Vec<u8> = Vec::new();
         v.resize(512, 0);
-        
+
         // Read the block again
         let request = block_device
             .lock()
             .create_request(0, v.into_boxed_slice(), false);
 
         let buf = request.await;
-		*/
-		
-		use crate::filesystem::ext2::code::Ext2;
-		
-		let ext2 = Ext2::new(&block_device);
-        
+        */
+
+        use crate::filesystem::ext2::code::Ext2;
+
+        let ext2 = Ext2::new(&block_device);
+
         ext2.load_superblock().await.unwrap();
-        
+
         info!("{:?}", ext2.read_inode(2).await.unwrap());
         loop {
-            let mut inode = ext2.get_path("/file2").await.unwrap().unwrap();
+            let inode = ext2.get_path("/file2").await.unwrap().unwrap();
             let mut handle = ext2.inode_handle(inode).await.unwrap();
             use kernel_io::Read;
             let t = handle.read_to_end_new().await.unwrap();
             println!("File contents: {:?}", core::str::from_utf8(&t.1).unwrap());
-		}
+        }
         //crate::sbi::shutdown(0);
     };
     let block = Box::pin(block);
@@ -203,7 +199,7 @@ pub fn test_task_3() {
     while core::task::Poll::Pending == Pin::new(&mut block).poll(&mut context) {
         unsafe { do_supervisor_syscall_0(2) };
     }
-    
+
     info!("Ending");
 }
 

@@ -1,10 +1,8 @@
-use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
-use lock_api::{GuardNoSend, GuardSend, RawMutex};
+use lock_api::{GuardNoSend, RawMutex};
 
 pub use super::super::spin::RawMutex as RawSpinlock;
-
-use core::sync::atomic::Ordering;
 
 pub const NO_HART: usize = usize::MAX;
 
@@ -25,13 +23,15 @@ unsafe impl RawMutex for RawSharedLock {
     type GuardMarker = GuardNoSend;
 
     fn lock(&self) {
-    	while !self.try_lock() {};
+        while !self.try_lock() {}
     }
 
     fn try_lock(&self) -> bool {
         if self.internal.try_lock() {
-    		self.old_sie.store(crate::cpu::read_sie(), Ordering::SeqCst);
-    		unsafe { crate::cpu::write_sie(0); }
+            self.old_sie.store(crate::cpu::read_sie(), Ordering::SeqCst);
+            unsafe {
+                crate::cpu::write_sie(0);
+            }
             true
         } else {
             false
@@ -40,7 +40,9 @@ unsafe impl RawMutex for RawSharedLock {
 
     unsafe fn unlock(&self) {
         self.internal.unlock();
-    	unsafe { crate::cpu::write_sie(self.old_sie.load(Ordering::SeqCst)); }
+        unsafe {
+            crate::cpu::write_sie(self.old_sie.load(Ordering::SeqCst));
+        }
     }
 }
 

@@ -51,7 +51,6 @@ pub fn add_this_secondary_hart(hartid: usize, interrupt_sp: usize) {
     trap_frame.pid = 0;
     trap_frame.hartid = hartid;
     trap_frame.interrupt_stack = interrupt_sp;
-    
 
     // SAFETY: trap_frame is a valid trap frame and will live as long as this hart exists
     // so sscratch will be valid and this will not invoke UB

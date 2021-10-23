@@ -81,15 +81,12 @@ impl Executor {
             let mut guard = task.future.lock();
 
             let future = &mut *guard;
-            let t = core::pin::Pin::new(future).poll(&mut context);
-            t
+
+            core::pin::Pin::new(future).poll(&mut context)
         };
 
         match result {
-            Poll::Ready(_) => {
-                println!("Ready {:?}", self.queue.lock().len());
-                Some(Some(task))
-            }
+            Poll::Ready(_) => Some(Some(task)),
             Poll::Pending => {
                 self.queue.lock().push_front(task);
                 Some(None)

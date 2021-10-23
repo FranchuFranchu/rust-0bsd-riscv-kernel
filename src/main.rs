@@ -1,5 +1,4 @@
 #![feature(
-    llvm_asm,
     asm,
     naked_functions,
     const_trait_impl,
@@ -7,7 +6,6 @@
     default_alloc_error_handler,
     const_mut_refs,
     panic_info_message,
-    maybe_uninit_ref,
     option_result_unwrap_unchecked,
     unchecked_math,
     const_btree_new,
@@ -159,9 +157,9 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
         cpu::write_sie(SSIE | SEIE | STIE);
 
         let mut sstatus: usize;
-        llvm_asm!("csrr $0, sstatus" : "=r"(sstatus));
+        asm!("csrr {0}, sstatus", out(reg)(sstatus),);
         sstatus |= 1 << 1;
-        llvm_asm!("csrw sstatus, $0" :: "r"(sstatus));
+        asm!("csrw sstatus, {0}" , in(reg) ( sstatus));
     }
     let tab = RootTable(unsafe { &mut paging::ROOT_PAGE });
     //tab.map(0x20000000, 0x20001000, 0x200000, 15);

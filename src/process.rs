@@ -105,9 +105,9 @@ impl Process {
 
         let (time, perf, cycle): (usize, usize, usize);
 
-        unsafe { llvm_asm!("csrr $0, time" : "=r"(time) ::: "volatile") };
-        unsafe { llvm_asm!("csrr $0, instret" : "=r"(perf) ::: "volatile") };
-        unsafe { llvm_asm!("csrr $0, cycle" : "=r"(cycle) ::: "volatile") };
+        unsafe { asm!("csrr {0}, time", out(reg)(time),) };
+        unsafe { asm!("csrr {0}, instret", out(reg)(perf),) };
+        unsafe { asm!("csrr {0}, cycle", out(reg)(cycle),) };
 
         //debug!("{:?} {:?} {:?}", perf, cycle, time);
 
@@ -351,14 +351,14 @@ pub extern "C" fn process_return_address_supervisor() {
     debug!("{:?}", "Process return address");
     // Run a syscall that deletes the process
     unsafe {
-        llvm_asm!(r"
+        asm!(r"
 			li a7, 1
 			# Trigger a software interrupt
 			csrr t0, sip
 			# Set SSIP
 			ori t0, t0, 2
 			csrw sip, t0
-		"::: "a7", "t0")
+		", out("a7") _, out("t0") _)
     }
 }
 

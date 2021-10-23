@@ -22,8 +22,6 @@ impl<T> MutexWrapper<T> {
 
 unsafe impl GlobalAlloc for MutexWrapper<Option<SlabAllocator>> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        //println!("{:?} {}", layout.size(), a.load(Ordering::SeqCst));
-        a.fetch_add(layout.size(), Ordering::SeqCst);
         self.0
             .lock()
             .as_mut()

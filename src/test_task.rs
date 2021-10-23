@@ -206,13 +206,13 @@ pub fn test_task_3() {
 #[inline]
 fn trigger_yield_syscall() {
     unsafe {
-        llvm_asm!(r"
+        asm!(r"
 			li a7, 2
 			# Trigger a timer interrupt
 			csrr t0, sip
 			# Set SSIP
 			ori t0, t0, 2
 			csrw sip, t0
-		"::: "a7", "t0")
+		", out("a7") _, out("t0") _)
     }
 }

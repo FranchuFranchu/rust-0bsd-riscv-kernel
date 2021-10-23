@@ -119,9 +119,9 @@ fn hart_entry(hartid: usize, interrupt_stack: usize) -> ! {
         cpu::write_sie(SSIE | STIE | SEIE);
 
         let mut sstatus: usize;
-        llvm_asm!("csrr $0, sstatus" : "=r"(sstatus));
+        asm!("csrr {0}, sstatus", out(reg)(sstatus),);
         sstatus |= 1 << 1;
-        llvm_asm!("csrw sstatus, $0" :: "r"(sstatus));
+        asm!("csrw sstatus, {0}" , in(reg) ( sstatus));
     }
 
     schedule_next_slice(0);

@@ -68,8 +68,8 @@ impl<'a> Paging for RootTable<'a> {
 
         println!("{:?}", "finish");
 
-        unsafe { llvm_asm!("sfence.vma") };
-        unsafe { llvm_asm!("fence rw, rw") };
+        unsafe { asm!("sfence.vma") };
+        unsafe { asm!("fence rw, rw") };
 
         info!("entry");
     }

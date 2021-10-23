@@ -39,13 +39,13 @@ impl SBIError {
 pub unsafe fn call_sbi_0(extension_id: usize, function_id: usize) -> Result<usize, SBIError> {
     let error_code: usize;
     let return_value: usize;
-    llvm_asm!(r"
-		mv a7, $2
-		mv a6, $3
+    asm!(r"
+		mv a7, {2}
+		mv a6, {3}
 		ecall
-		mv $0, a0
-		mv $1, a1
-	" : "=r"(error_code), "=r"(return_value) : "r"(extension_id), "r"(function_id));
+		mv {0}, a0
+		mv {1}, a1
+	", out(reg) error_code, out(reg) return_value, in(reg) extension_id, in(reg) function_id);
 
     if error_code == 0 {
         Ok(return_value)
@@ -61,14 +61,14 @@ pub unsafe fn call_sbi_1(
 ) -> Result<usize, SBIError> {
     let error_code: usize;
     let return_value: usize;
-    llvm_asm!(r"
-		mv a7, $2
-		mv a6, $3
-		mv a0, $4
+    asm!(r"
+		mv a7, {2}
+		mv a6, {3}
+		mv a0, {4}
 		ecall
-		mv $0, a0
-		mv $1, a1
-	" : "=r"(error_code), "=r"(return_value) : "r"(extension_id), "r"(function_id), "r"(a0));
+		mv {0}, a0
+		mv {1}, a1
+	", out(reg) error_code, out(reg) return_value, in(reg) extension_id, in(reg) function_id, in(reg) a0);
 
     if error_code == 0 {
         Ok(return_value)
@@ -85,15 +85,15 @@ pub unsafe fn call_sbi_2(
 ) -> Result<usize, SBIError> {
     let error_code: usize;
     let return_value: usize;
-    llvm_asm!(r"
-		mv a7, $2
-		mv a6, $3
-		mv a0, $4
-		mv a1, $5
+    asm!(r"
+		mv a7, {2}
+		mv a6, {3}
+		mv a0, {4}
+		mv a1, {5}
 		ecall
-		mv $0, a0
-		mv $1, a1
-	" : "=r"(error_code), "=r"(return_value) : "r"(extension_id), "r"(function_id), "r"(a0), "r"(a1):: "volatile");
+		mv {0}, a0
+		mv {1}, a1
+	", out(reg) error_code, out(reg) return_value, in(reg) extension_id, in(reg) function_id, in(reg) a0, in(reg) a1);
 
     if error_code == 0 {
         Ok(return_value)
@@ -111,16 +111,16 @@ pub unsafe fn call_sbi_3(
 ) -> Result<usize, SBIError> {
     let error_code: usize;
     let return_value: usize;
-    llvm_asm!(r"
-		mv a7, $2
-		mv a6, $3
-		mv a0, $4
-		mv a1, $5
-		mv a2, $6
+    asm!(r"
+		mv a7, {2}
+		mv a6, {3}
+		mv a0, {4}
+		mv a1, {5}
+		mv a2, {6}
 		ecall
-		mv $0, a0
-		mv $1, a1
-	" : "=r"(error_code), "=r"(return_value) : "r"(extension_id), "r"(function_id), "r"(a0), "r"(a1), "r"(a2));
+		mv {0}, a0
+		mv {1}, a1
+	", out(reg) error_code, out(reg) return_value, in(reg) extension_id, in(reg) function_id, in(reg) a0, in(reg) a1, in(reg) a2);
 
     if error_code == 0 {
         Ok(return_value)

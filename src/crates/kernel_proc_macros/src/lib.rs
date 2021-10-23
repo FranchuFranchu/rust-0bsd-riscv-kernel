@@ -21,12 +21,12 @@ pub fn read_csr(item: TokenStream) -> TokenStream {
         _ => panic!("Only plain identifiers are allowed, not {:?}", args),
     }
     
-    let s = syn::LitStr::new(&format!("csrr $0, {}", csr), Span::call_site());
+    let s = syn::LitStr::new(&format!("csrr {0}, {}", csr), Span::call_site());
     
     (quote! {
         {
             let value: usize;
-            unsafe { llvm_asm!(#s : "=r"(value) ::: "volatile") };
+            unsafe { asm!(#s , out(reg) (value) ,) };
             value
         }
     }).into()

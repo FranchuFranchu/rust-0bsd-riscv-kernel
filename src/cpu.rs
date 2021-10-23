@@ -46,38 +46,38 @@ impl Registers {
 /// This can cause hangups and other things that aren't very good
 #[inline(always)]
 pub unsafe fn write_sie(value: usize) {
-    llvm_asm!("csrw sie, $0" :: "r"(value) :: "volatile")
+    asm!("csrw sie, {0}" , in(reg) ( value) )
 }
 
 /// # Safety
 /// When setting interrupts, the proper context needs to be created for the trap handler
 #[inline(always)]
 pub unsafe fn write_sip(value: usize) {
-    llvm_asm!("csrw sip, $0" :: "r"(value) :: "volatile")
+    asm!("csrw sip, {0}" , in(reg) ( value) )
 }
 
 /// # Safety
 /// Must be s_trap
 #[inline(always)]
 pub unsafe fn write_stvec(value: usize) {
-    llvm_asm!("csrw stvec, $0" :: "r"(value) :: "volatile")
+    asm!("csrw stvec, {0}" , in(reg) ( value) )
 }
 
 /// # Safety
 /// Must uphold SATP assumptions in the rest of the kernel. Mainly, that it's a valid page table
 #[inline(always)]
 pub unsafe fn write_satp(value: usize) {
-    llvm_asm!("
-		csrw satp, $0
+    asm!("
+		csrw satp, {0}
 		sfence.vma
-		" :: "r"(value) :: "volatile")
+		", in(reg) value)
 }
 
 /// # Safety
 /// Too many constraints to document. Shouldn't be changed very frecuently.
 #[inline(always)]
 pub unsafe fn write_sstatus(value: usize) {
-    llvm_asm!("csrw sstatus, $0" :: "r"(value) :: "volatile")
+    asm!("csrw sstatus, {0}" , in(reg) ( value) )
 }
 
 /// This is unsafe because other parts of the kernel rely on sscratch being a valid pointer
@@ -85,62 +85,62 @@ pub unsafe fn write_sstatus(value: usize) {
 /// Must be a valid trap frame and must make sense with what the hart is executing
 #[inline(always)]
 pub unsafe fn write_sscratch(value: usize) {
-    llvm_asm!("csrw sscratch, $0" :: "r"(value) :: "volatile")
+    asm!("csrw sscratch, {0}" , in(reg) ( value) )
 }
 
 #[inline]
 pub fn read_sscratch() -> *mut crate::trap::TrapFrame {
     let value: usize;
-    unsafe { llvm_asm!("csrr $0, sscratch" : "=r"(value) ::: "volatile") };
+    unsafe { asm!("csrr {0}, sscratch", out(reg)(value),) };
     value as _
 }
 
 #[inline(always)]
 pub fn read_sp() -> usize {
     let value: usize;
-    unsafe { llvm_asm!("mv $0, sp" : "=r"(value) ::: "volatile") };
+    unsafe { asm!("mv {0}, sp", out(reg)(value),) };
     value
 }
 
 #[inline(always)]
 pub fn read_sip() -> usize {
     let value: usize;
-    unsafe { llvm_asm!("csrr $0, sip" : "=r"(value) ::: "volatile") };
+    unsafe { asm!("csrr {0}, sip", out(reg)(value),) };
     value
 }
 
 #[inline(always)]
 pub fn read_satp() -> usize {
     let value: usize;
-    unsafe { llvm_asm!("csrr $0, satp" : "=r"(value) ::: "volatile") };
+    unsafe { asm!("csrr {0}, satp", out(reg)(value),) };
     value
 }
 
 #[inline(always)]
 pub fn read_sie() -> usize {
     let value: usize;
-    unsafe { llvm_asm!("csrr $0, sie" : "=r"(value) ::: "volatile") };
+    unsafe { asm!("csrr {0}, sie", out(reg)(value),) };
     value
 }
 
 #[inline(always)]
 pub fn read_sstatus() -> usize {
     let value: usize;
-    unsafe { llvm_asm!("csrr $0, sstatus" : "=r"(value) ::: "volatile") };
+    unsafe { asm!("csrr {0}, sstatus", out(reg)(value),) };
     value
 }
 
 #[inline(always)]
 pub fn read_time() -> usize {
     let value: usize;
-    unsafe { llvm_asm!("csrr $0, time" : "=r"(value) ::: "volatile") };
+    unsafe { asm!("csrr {0}, time", out(reg)(value),) };
     value
 }
 
 #[inline(always)]
 pub fn read_cycle() -> usize {
     let value: usize;
-    unsafe { llvm_asm!("csrr $0, cycle" : "=r"(value) ::: "volatile") };
+    unsafe { asm!("csrr {0}, cycle", out(reg)(value),) };
     value
 }
 
@@ -159,12 +159,12 @@ pub fn wfi() {
     // wfi never changes any register state and is always safe
     // it's essentially a processor hint and can act as a NOP
     unsafe {
-        llvm_asm!("wfi");
+        asm!("wfi");
     }
 }
 
 pub fn fence_vma() {
-    unsafe { llvm_asm!("sfence.vma zero, zero") };
+    unsafe { asm!("sfence.vma zero, zero") };
 }
 
 /// This is provided by the CLINT

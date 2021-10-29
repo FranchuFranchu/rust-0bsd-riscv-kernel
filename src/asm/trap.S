@@ -106,17 +106,24 @@
 .endm
 
 .section .text
+
 .global s_trap_vector
 # This must be aligned by 4 since the last two bits
 # of the mtvec register do not contribute to the address
 # of this vector.
+.global critical_code_start
+critical_code_start:
 .align 4
 s_trap_vector:
 	store_volatile_registers
 	# Now t5 and sscratch have the trap frame pointer
 	
+	
 	# Get ready to go into Rust (trap.rs)
-	# csrw	sie, zero
+	
+	# Load the kernel page table which includes all kernel code including trap.rs
+	lx a0, XLEN*38(t5)
+	csrw satp, a0
 	
 	lx 		sp, XLEN*35(t5)
 	csrr	a0, sepc
@@ -128,12 +135,17 @@ s_trap_vector:
 	csrr	a4, sstatus
 	csrr	a5, sscratch
 	
+	
+	
 	# Usually, We don't want to write into the user's stack or whomever
 	# messed with us here.
 	# We haven't gotten userspace to work yet, so we can assume that this interrupt was triggered in kernel mode
 	
 	# la		t0, KERNEL_STACK_END
 	# lx		sp, 0(t0)
+	
+	
+	
 	call	trap_handler
 	
 	# When we get here, we've returned from m_trap, restore registers
@@ -146,6 +158,7 @@ s_trap_vector:
 
 trap_exit:
 	sret
+	
 
 .global switch_to_supervisor_frame	
 switch_to_supervisor_frame:
@@ -163,8 +176,6 @@ switch_to_supervisor_frame:
 	csrw sie, t0
 	
 	restore_volatile_registers
-.global switch_to_supervisor_frame_end
-switch_to_supervisor_frame_end:
 	sret
 
 .global switch_to_user_frame	
@@ -191,7 +202,10 @@ switch_to_user_frame:
 	
 	restore_volatile_registers
 	
+.global switch_to_user_frame_end
+switch_to_user_frame_end:
 	sret
+	
 
 
 # Essentially like s_trap_vector, but smode-to-smode
@@ -237,3 +251,6 @@ store_to_trap_frame:
 	store_volatile_registers
 	csrrw a0, sscratch, a0
 	ret
+
+.global critical_code_end	
+critical_code_end:

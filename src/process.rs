@@ -284,7 +284,7 @@ pub fn allocate_pid_lockfree(processes: &BTreeMap<usize, Arc<RwLock<Process>>>) 
 
 /// Creates a supervisor process and returns PID
 /// SAFETY: Only when function is a valid function pointer (with)
-pub fn new_process_int(function: usize, a0: usize, constructor: impl Fn(&mut Process)) -> usize {
+pub fn new_process_int(function: usize, a0: usize, mut constructor: impl FnMut(&mut Process)) -> usize {
     // Hold this guard for as much time as possible
     // to prevent a race condition on allocate_pid
     let mut guard = PROCESSES.write();
@@ -310,6 +310,7 @@ pub fn new_process_int(function: usize, a0: usize, constructor: impl Fn(&mut Pro
     process.trap_frame.pc = function;
     process.trap_frame.pid = pid;
     process.trap_frame.hartid = 0xBADC0DE;
+    process.trap_frame.use_current_satp_as_kernel_satp();
     // Wrap the process in a lock
     let process = RwLock::new(process);
     // Move the process into an Arc

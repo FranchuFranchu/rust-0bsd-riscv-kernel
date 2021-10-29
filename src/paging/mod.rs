@@ -55,7 +55,6 @@ impl Entry {
     /// The entry's value must be a valid physical address pointer
     pub unsafe fn as_table_mut(&mut self) -> &mut Table {
         assert!(self.value & 1 != 0);
-        println!("T2 {:p}", (((self.value & EntryBits::ADDRESS_MASK) << 2) as *mut Table).as_mut().unwrap());
         (((self.value & EntryBits::ADDRESS_MASK) << 2) as *mut Table)
             .as_mut()
             .unwrap()
@@ -92,7 +91,6 @@ impl Entry {
     /// If this entry is a megapage, for example, the increment should be PAGE_SIZE
 
     pub unsafe fn split(&mut self, increment: usize) {
-        println!("Oldval {:x}", self.value);
         use alloc::boxed::Box;
 
         let mut table = Box::new(Table::zeroed());
@@ -108,7 +106,6 @@ impl Entry {
         }
         self.value = 1 | ((&*table as *const Table as usize) >> 2);
         Box::leak(table);
-        println!("Newval {:x}", self.value);
 
         debug_assert!(!self.is_leaf());
         debug_assert!(self.value & 1 != 0);
@@ -180,8 +177,26 @@ pub trait Paging {
 
 pub unsafe fn enable(root_table_physical: usize) {}
 
+use core::ffi::c_void;
+
+extern "C" {
+    static critical_code_start: c_void;
+    static critical_code_end: c_void;
+}
+
+/// Map the trap and switch to user/supervisor frame functions, which are the ones that change SATP to change contexts
+pub fn map_critical_kernel_address_space(table: &mut impl Paging, trap_frame: usize) {
+    
+    let start = unsafe { &critical_code_start as *const c_void as usize }.unstable_div_floor(4096) * 4096;
+    
+    let end = unsafe { &critical_code_end as *const c_void as usize }.unstable_div_ceil(4096) * 4096;
+    table.map(start, start, end - start, EntryBits::VALID | EntryBits::READ | EntryBits::EXECUTE);
+    table.map(trap_frame, trap_frame, 4096, EntryBits::VALID | EntryBits::READ | EntryBits::WRITE);
+}
+
 pub static mut PAGE_TABLE_TABLE: Table = Table::zeroed();
 #[link_section = ".data"]
+#[no_mangle]
 pub static mut ROOT_PAGE: Table = Table::zeroed();
 
 pub const ENTRY_COUNT: usize = 512;

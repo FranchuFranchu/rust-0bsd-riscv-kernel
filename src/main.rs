@@ -14,6 +14,7 @@
     unsized_locals,
     async_stream,
     label_break_value,
+    int_roundings,
     type_ascription,
     global_asm
 )]

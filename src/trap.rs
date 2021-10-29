@@ -1,14 +1,4 @@
-use crate::{
-    context_switch,
-    cpu::{self, load_hartid, read_sscratch},
-    external_interrupt,
-    hart::get_this_hart_meta,
-    interrupt_context_waker,
-    process::delete_process,
-    sbi,
-    scheduler::schedule_next_slice,
-    syscall, timeout, timer_queue, HART_PANIC_COUNT,
-};
+use crate::{HART_PANIC_COUNT, context_switch, cpu::{self, load_hartid, read_satp, read_sscratch}, external_interrupt, hart::get_this_hart_meta, interrupt_context_waker, process::delete_process, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
 
 /// A pointer to this struct is placed in sscratch
 #[derive(Default, Debug, Clone)] // No copy because they really shouldn't be copied and used without changing the PID
@@ -21,6 +11,7 @@ pub struct TrapFrame {
     pub interrupt_stack: usize, // 35. This may be shared between different processes executing the same hart
     pub flags: usize, // 36
     pub satp: usize, // 37
+    pub kernel_satp: usize, // 38
 }
 
 impl TrapFrame {
@@ -33,6 +24,7 @@ impl TrapFrame {
             interrupt_stack: 0,
             flags: 0,
             satp: 0,
+            kernel_satp: 0,
         }
     }
     pub const fn zeroed_interrupt_context() -> Self {
@@ -44,7 +36,11 @@ impl TrapFrame {
             interrupt_stack: 0,
             flags: 1,
             satp: 0,
+            kernel_satp: 0,
         }
+    }
+    pub fn use_current_satp_as_kernel_satp(&mut self)  {
+        self.kernel_satp = read_satp();
     }
     // Inherit hartid, interrupt_stack, and flags from the other trap frame
     pub fn inherit_from(&mut self, other: &TrapFrame) -> &mut TrapFrame {
@@ -175,7 +171,7 @@ pub unsafe extern "C" fn trap_handler(
             // Supervisor software interrupt
             1 => {
                 // We use this as an smode-to-smode system call
-                // First, clear the STIP bit
+                // First, clear the SSIP bit
                 unsafe { cpu::write_sip(cpu::read_sip() & !2) };
 
                 debug!("\x1b[1;36m^ SYSCALL TRAP\x1b[0m");
@@ -236,8 +232,9 @@ pub unsafe extern "C" fn trap_handler(
     } else {
         match cause {
             8 | 9 | 10 | 11 => {
-                debug!("Envionment call to us happened!");
-                loop {}
+                info!("Envionment call to us happened!");
+                
+                syscall::do_syscall(frame);
             }
             _ => {
                 error!(

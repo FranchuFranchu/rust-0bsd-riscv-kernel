@@ -13,49 +13,60 @@ pub unsafe fn identity_map(root: *mut Table) {
 pub struct RootTable<'a>(pub &'a mut Table);
 
 impl<'a> Paging for RootTable<'a> {
-    fn map(&mut self, virtual_addr: usize, physical_addr: usize, length: usize, flags: usize) {
+    fn map(&mut self, physical_addr: usize, virtual_addr: usize, length: usize, flags: usize) {
         let vpn2_min = ((virtual_addr >> 28) & (PAGE_ALIGN - 1)) / 4;
         let vpn1_min = ((virtual_addr >> 19) & (PAGE_ALIGN - 1)) / 4;
         let vpn0_min = ((virtual_addr >> 9) & (PAGE_ALIGN - 1)) / 4;
+        
 
         let vpn2_max = (((virtual_addr + length) >> 28) & (PAGE_ALIGN - 1)) / 4;
         let vpn1_max = (((virtual_addr + length) >> 19) & (PAGE_ALIGN - 1)) / 4;
         let vpn0_max = (((virtual_addr + length) >> 9) & (PAGE_ALIGN - 1)) / 4;
-        println!("{:?}", vpn0_max);
+        println!("vp2 {:?} {:?}", vpn2_min, vpn2_max);
+        println!("vp1 {:?} {:?}", vpn1_min, vpn1_max);
+        println!("vp0 {:?} {:?}", vpn0_min, vpn0_max);
+        println!("{:?}", flags);
 
         let offset: usize = physical_addr.wrapping_sub(virtual_addr) >> 2;
 
         for vpn2 in vpn2_min..vpn2_max + 1 {
+            
             let mut entry = &mut self.0.entries[vpn2];
-            println!("vp2 {} {:p}", vpn2, &entry);
+            //println!("vp2 {} {:p}", vpn2, &entry);
+            
             if (vpn2 == vpn2_max || vpn2 == vpn2_min) && entry.is_leaf() {
                 unsafe { entry.split(MEGAPAGE_SIZE) };
-                info!("{}", "Split")
+                //info!("{}", "Split")
             };
+            println!("vp2 {} {:?}", vpn2, entry);
+            //println!("{:?}", entry.value);
             if let Some(table) = unsafe { entry.try_as_table_mut() } {
-                println!("{:?}", "Table");
+                //println!("{:?}", "Table");
+                println!("T {:p}", table);
                 for vpn1 in vpn1_min..vpn1_max + 1 {
                     let mut entry = &mut table[vpn1];
-                    println!("vp1 {} {:p}", vpn1, &entry);
-                    if vpn1 == vpn1_max && entry.is_leaf() {
+                    //println!("vp1 {} {:?}", vpn1, *entry);
+                    if (vpn1 == vpn1_max || vpn1 == vpn1_min) && entry.is_leaf() {
+                        //info!("{}", "Split2");
                         unsafe { entry.split(PAGE_SIZE) };
-                        info!("{}", "Split")
                     };
+                    println!("vp1 {} {:?}", vpn1, entry);
                     if let Some(table) = unsafe { entry.try_as_table_mut() } {
+                        println!("T {:p}", table);
                         for vpn0 in vpn0_min..vpn0_max {
                             let mut entry = &mut table[vpn0];
-                            println!("vp0 {} {:p}", vpn0, &entry);
-                            println!("oldval {:x}", entry.value);
-                            println!("virt {:x}", (vpn2 << 30 | vpn1 << 21 | vpn0 << 12));
+                            //println!("oldval {:x}", entry.value);
+                            //println!("virt {:x}", (vpn2 << 30 | vpn1 << 21 | vpn0 << 12));
                             entry.value =
                                 (vpn2 << 28 | vpn1 << 19 | vpn0 << 10 | flags).wrapping_add(offset);
-                            println!("newval {:x}", entry.value);
+                            println!("vp0 {} {:?}", vpn0, entry);
+                            //println!("newval {:x}", entry.value);
                         }
                     } else {
-                        println!("oldval {:x}", entry.value);
+                        println!("oldval {:?}", entry);
                         println!("virt {:x}", (vpn2 << 30 | vpn1 << 21));
                         entry.value = (vpn2 << 28 | vpn1 << 19 | flags).wrapping_add(offset);
-                        println!("newval {:x}", entry.value);
+                        println!("newval {:?}", entry);
                     }
                 }
             } else {
@@ -72,5 +83,10 @@ impl<'a> Paging for RootTable<'a> {
         unsafe { asm!("fence rw, rw") };
 
         info!("entry");
+    }
+    fn identity_map(&mut self) {
+        for (idx, i) in (self.0.entries).iter_mut().enumerate() {
+            i.value = EntryBits::VALID | EntryBits::RWX | (GIGAPAGE_SIZE / 4 * idx);
+        }
     }
 }

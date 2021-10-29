@@ -1,4 +1,6 @@
 use core::ops::{Index, IndexMut};
+use core::fmt::Debug;
+use core::fmt::Formatter;
 
 pub mod sv32;
 #[cfg(target_arch = "riscv64")]
@@ -37,7 +39,7 @@ pub mod EntryBits {
     pub const DATA_SUPERVISOR: usize = 1 << 1 | 1 << 2 | 1;
 }
 
-#[derive(Default, Copy, Clone, Debug)]
+#[derive(Default, Copy, Clone)]
 pub struct Entry {
     pub value: usize,
 }
@@ -52,6 +54,8 @@ impl Entry {
     /// # Safety
     /// The entry's value must be a valid physical address pointer
     pub unsafe fn as_table_mut(&mut self) -> &mut Table {
+        assert!(self.value & 1 != 0);
+        println!("T2 {:p}", (((self.value & EntryBits::ADDRESS_MASK) << 2) as *mut Table).as_mut().unwrap());
         (((self.value & EntryBits::ADDRESS_MASK) << 2) as *mut Table)
             .as_mut()
             .unwrap()
@@ -59,6 +63,7 @@ impl Entry {
     /// # Safety
     /// The entry's value must be a valid physical address pointer
     pub unsafe fn as_table(&self) -> &Table {
+        assert!(self.value & 1 != 0);
         (((self.value & EntryBits::ADDRESS_MASK) << 2) as *mut Table)
             .as_ref()
             .unwrap()
@@ -80,20 +85,22 @@ impl Entry {
     }
 
     pub fn is_leaf(&self) -> bool {
-        (self.value & EntryBits::RWX) != 0
+        (self.value & EntryBits::RWX) != 0 || (self.value & EntryBits::VALID == 0) || (self.value & EntryBits::ADDRESS_MASK) == 0
     }
     /// This takes a leaf entry and turns it into a reference to a page table with the same effect.
     /// Increment should be one of the PAGE_SIZE, MEGAPAGE_SIZE, GIGAPAGE_SIZE, etc constants
     /// If this entry is a megapage, for example, the increment should be PAGE_SIZE
 
     pub unsafe fn split(&mut self, increment: usize) {
-        println!("S {:p}", self);
+        println!("Oldval {:x}", self.value);
         use alloc::boxed::Box;
 
         let mut table = Box::new(Table::zeroed());
         let mut current_address = self.value & EntryBits::ADDRESS_MASK;
-        //info!("{:?}", unsafe { *((current_address as *const u32).add(10)) });
+        
+        
         let flags = self.value & !(EntryBits::ADDRESS_MASK);
+        
 
         for entry in table.entries.iter_mut() {
             entry.value = flags | current_address;
@@ -101,9 +108,39 @@ impl Entry {
         }
         self.value = 1 | ((&*table as *const Table as usize) >> 2);
         Box::leak(table);
-        println!("{:x}", self.value);
+        println!("Newval {:x}", self.value);
 
         debug_assert!(!self.is_leaf());
+        debug_assert!(self.value & 1 != 0);
+        debug_assert!(self.value & EntryBits::RWX == 0);
+    }
+}
+
+impl Debug for Entry {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        use EntryBits::*;
+        use core::fmt::Write;
+        f.write_str("<Entry: ")?;
+        if self.value & VALID == 0 {
+            f.write_fmt(format_args!("Invalid entry: {:x}", self.value))?;
+        } else if self.value & RWX == 0 {
+            f.write_fmt(format_args!("Table to: {:x}", (self.value & ADDRESS_MASK) << 2))?;
+        } else {
+            if self.value & READ != 0 {
+                f.write_char('R')?;
+            } if self.value & WRITE  != 0 {
+                f.write_char('W')?;
+            } if self.value & EXECUTE  != 0 {
+                f.write_char('X')?;
+            } if self.value & USER  != 0 {
+                f.write_char('U')?;
+            }
+            f.write_char(' ')?;
+            f.write_fmt(format_args!("{:x}", (self.value & ADDRESS_MASK) << 2));
+            
+        }
+        f.write_char('>')?;
+        Ok(())
     }
 }
 
@@ -136,7 +173,9 @@ impl IndexMut<usize> for Table {
 }
 
 pub trait Paging {
-    fn map(&mut self, physical_addr: usize, virtual_addr: usize, length: usize, flags: usize) {}
+    
+    fn map(&mut self, physical_addr: usize, virtual_addr: usize, length: usize, flags: usize);
+    fn identity_map(&mut self);
 }
 
 pub unsafe fn enable(root_table_physical: usize) {}

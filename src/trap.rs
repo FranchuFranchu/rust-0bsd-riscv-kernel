@@ -18,9 +18,9 @@ pub struct TrapFrame {
     pub pc: usize,     // 32
     pub hartid: usize, // 33
     pub pid: usize,    // 34
-    /// This may be shared between different processes executing the same hart
-    pub interrupt_stack: usize,
-    pub flags: usize,
+    pub interrupt_stack: usize, // 35. This may be shared between different processes executing the same hart
+    pub flags: usize, // 36
+    pub satp: usize, // 37
 }
 
 impl TrapFrame {
@@ -32,6 +32,7 @@ impl TrapFrame {
             pc: 0,
             interrupt_stack: 0,
             flags: 0,
+            satp: 0,
         }
     }
     pub const fn zeroed_interrupt_context() -> Self {
@@ -42,6 +43,7 @@ impl TrapFrame {
             pc: 0,
             interrupt_stack: 0,
             flags: 1,
+            satp: 0,
         }
     }
     // Inherit hartid, interrupt_stack, and flags from the other trap frame
@@ -49,6 +51,7 @@ impl TrapFrame {
         self.hartid = other.hartid;
         self.interrupt_stack = other.interrupt_stack;
         self.flags = other.flags;
+        self.satp = other.satp;
         self
     }
     pub fn print(&self) {

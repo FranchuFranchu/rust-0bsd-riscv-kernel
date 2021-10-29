@@ -1,20 +1,19 @@
 //! The functions here are tasks that can be run to make sure that complex kernel tasks
 //! won't crash
 
+use aligned::Aligned;
 use alloc::{collections::BTreeSet, vec::Vec};
 use core::{
     ops::{BitAnd, BitXor},
     pin::Pin,
     task::Context,
 };
+use core::iter::FromIterator;
+use core::mem::size_of;
+use core::mem::MaybeUninit;
+use alloc::alloc::Layout;
 
-use crate::{
-    asm::do_supervisor_syscall_0,
-    cpu,
-    drivers::{traits::block::GenericBlockDevice, virtio::VirtioDriver},
-    external_interrupt::ExternalInterruptHandler,
-    fdt, process,
-};
+use crate::{asm::do_supervisor_syscall_0, cpu, drivers::{traits::block::GenericBlockDevice, virtio::VirtioDriver}, external_interrupt::ExternalInterruptHandler, fdt, paging::{EntryBits, Paging}, process};
 
 // random-ish function I just made up
 fn twist(value: &mut usize) -> usize {
@@ -32,6 +31,18 @@ fn twist(value: &mut usize) -> usize {
         .bitxor(0b10101110101)
         .bitand(0xFF);
     *value
+}
+
+pub fn boxed_slice_with_alignment<T: Clone>(size: usize, align: usize, initialize: &T) -> alloc::boxed::Box<[T]> {
+    unsafe { 
+        let ptr: *mut MaybeUninit<T> = alloc::alloc::alloc(Layout::from_size_align(size * size_of::<T>(), align).unwrap()) as *mut MaybeUninit<T>;
+        for i in 0..size {
+            *ptr.add(i) = MaybeUninit::new(initialize.clone())
+        }
+        alloc::boxed::Box::from_raw(core::slice::from_raw_parts_mut(ptr as *mut T, size))
+        
+        
+    }
 }
 
 pub fn test_task() {
@@ -178,13 +189,49 @@ pub fn test_task_3() {
         ext2.load_superblock().await.unwrap();
 
         info!("{:?}", ext2.read_inode(2).await.unwrap());
-        loop {
-            let inode = ext2.get_path("/file2").await.unwrap().unwrap();
-            let mut handle = ext2.inode_handle(inode).await.unwrap();
-            use kernel_io::Read;
-            let t = handle.read_to_end_new().await.unwrap();
-            println!("File contents: {:?}", core::str::from_utf8(&t.1).unwrap());
-        }
+        
+        
+        let inode = ext2.get_path("/main").await.unwrap().unwrap();
+        let mut handle = ext2.inode_handle(inode).await.unwrap();
+        use kernel_io::Read;
+        let t = handle.read_to_end_new().await.unwrap();
+        let mut new_page_table = Box::new(crate::paging::Table::zeroed());
+        
+        
+        
+        let mut root_table = crate::paging::sv39::RootTable(&mut new_page_table);
+        
+        let elf_file = elf_rs::Elf::from_bytes(&t.1);
+        let mut allocated_segments = Vec::new();
+        if let elf_rs::Elf::Elf64(e) = elf_file.unwrap() {
+            println!("{:?} header: {:?}", e, e.header());
+
+            for p in e.program_header_iter() {
+                let segment = boxed_slice_with_alignment(p.ph.memsz() as usize, 4096, &0u8);
+                println!("{:x}", &segment[0] as *const u8 as usize);
+                //root_table.map(&segment[0] as *const u8 as usize, p.ph.vaddr() as usize, (p.ph.memsz() as usize).max(4096), EntryBits::EXECUTE | EntryBits::VALID | EntryBits::READ);
+                root_table.map(0, p.ph.vaddr() as usize, (p.ph.memsz() as usize).max(4096), EntryBits::EXECUTE | EntryBits::VALID | EntryBits::READ);
+                allocated_segments.push(segment);
+            }
+
+            for s in e.section_header_iter() {
+                //println!("{:x?}", s);
+            }
+
+            let s = e.lookup_section(".text");
+            //println!("s {:?}", s);
+            
+            
+            unsafe { println!("{:x}", root_table.0.entries[0].as_table_mut()[0].as_table_mut()[32].value); }
+            process::new_process_int(e.header().entry_point() as usize, 0, |process| {
+                process.is_supervisor = false;
+                process.trap_frame.satp = (&*root_table.0 as *const crate::paging::Table as usize)  >> 12  | cpu::csr::SATP_SV39;
+            });
+        };
+        core::mem::forget(allocated_segments);
+        core::mem::forget(root_table);
+        core::mem::forget(new_page_table);
+        
         //crate::sbi::shutdown(0);
     };
     let block = Box::pin(block);

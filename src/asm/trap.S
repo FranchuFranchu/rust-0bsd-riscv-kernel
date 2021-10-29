@@ -154,6 +154,10 @@ switch_to_supervisor_frame:
 	// When SRET is executed, set PC to the old PC
 	lx t0, XLEN*32(a0)
 	csrw sepc, t0
+	
+	lx t0, XLEN*37(a0)
+	csrw satp, t0
+	
 	// If this process got interrupted, it means interrupts were enabled
 	li t0, 0x222
 	csrw sie, t0
@@ -161,6 +165,32 @@ switch_to_supervisor_frame:
 	restore_volatile_registers
 .global switch_to_supervisor_frame_end
 switch_to_supervisor_frame_end:
+	sret
+
+.global switch_to_user_frame	
+switch_to_user_frame:
+	// Load the trap frame
+	csrw sscratch, a0
+	// When SRET is executed, set PC to the old PC
+	lx t0, XLEN*32(a0)
+	csrw sepc, t0
+	
+	lx t0, XLEN*37(a0)
+	csrw satp, t0
+	sfence.vma
+	
+	// If this process got interrupted, it means interrupts were enabled
+	li t0, 0x222
+	csrw sie, t0
+	
+	// Clear SPP, which will make it so that when SRET is executed, we are in user mode
+	csrr t0, sstatus
+	li t1, ~(1 << 8)
+	and t0, t1, t0
+	csrw sstatus, t0
+	
+	restore_volatile_registers
+	
 	sret
 
 

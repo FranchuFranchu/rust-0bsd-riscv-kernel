@@ -12,14 +12,7 @@ use core::{
     task::{RawWaker, RawWakerVTable, Waker},
 };
 
-use crate::{
-    asm::do_supervisor_syscall_0,
-    context_switch,
-    cpu::{self, load_hartid, read_sscratch, Registers},
-    lock::shared::RwLock,
-    scheduler::schedule_next_slice,
-    trap::{in_interrupt_context, use_boot_frame_if_necessary, TrapFrame},
-};
+use crate::{asm::do_supervisor_syscall_0, context_switch, cpu::{self, load_hartid, read_sscratch, Registers}, lock::shared::RwLock, scheduler::schedule_next_slice, test_task::boxed_slice_with_alignment, trap::{in_interrupt_context, use_boot_frame_if_necessary, TrapFrame}};
 
 pub const TASK_STACK_SIZE: usize = 4096 * 8;
 pub const PROCESS_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
@@ -67,8 +60,9 @@ pub struct Process {
 }
 
 extern "C" {
-    // Never returns (outside from interrupts)
+    // Never returns, the current thread of execution is destroyed
     fn switch_to_supervisor_frame(trap_frame: *mut TrapFrame) -> !;
+    fn switch_to_user_frame(trap_frame: *mut TrapFrame) -> !;
 }
 
 impl Process {
@@ -141,8 +135,12 @@ impl Process {
 
         self.trap_frame.flags &= !1;
 
-        // Switch to the trap frame
-        unsafe { switch_to_supervisor_frame(frame_pointer) };
+        if self.is_supervisor {
+            // Switch to the trap frame
+            unsafe { switch_to_supervisor_frame(frame_pointer) };
+        } else {
+            unsafe { switch_to_user_frame(frame_pointer) };
+        }
     }
 
     // These are the waker methods
@@ -286,7 +284,7 @@ pub fn allocate_pid_lockfree(processes: &BTreeMap<usize, Arc<RwLock<Process>>>) 
 
 /// Creates a supervisor process and returns PID
 /// SAFETY: Only when function is a valid function pointer (with)
-pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
+pub fn new_process_int(function: usize, a0: usize, constructor: impl Fn(&mut Process)) -> usize {
     // Hold this guard for as much time as possible
     // to prevent a race condition on allocate_pid
     let mut guard = PROCESSES.write();
@@ -296,7 +294,7 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
     let trapframe_box = Pin::new(trapframe_box);
 
     let mut process = Process {
-        is_supervisor: true,
+        is_supervisor: false,
         file_descriptors: BTreeMap::new(),
         trap_frame: trapframe_box,
         state: ProcessState::Pending,
@@ -304,34 +302,14 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
         name: None,
         no_op_yield_count: AtomicUsize::new(0),
     };
+    constructor(&mut process);
 
     // Set the initial state for the process
     process.trap_frame.general_registers[Registers::A0.idx()] = a0;
-    // NOTE change the function for user mode
-    process.trap_frame.general_registers[Registers::Ra.idx()] =
-        process_return_address_supervisor as usize;
 
     process.trap_frame.pc = function;
     process.trap_frame.pid = pid;
     process.trap_frame.hartid = 0xBADC0DE;
-    let process_stack = alloc::vec![0; TASK_STACK_SIZE].into_boxed_slice();
-    process.trap_frame.interrupt_stack = process_stack.as_ptr() as usize + TASK_STACK_SIZE - 0x10;
-
-    Box::leak(process_stack);
-
-    // Create a small stack for this process
-    let process_stack = alloc::vec![0; TASK_STACK_SIZE].into_boxed_slice();
-
-    process.trap_frame.general_registers[Registers::Sp.idx()] =
-        process_stack.as_ptr() as usize + TASK_STACK_SIZE - 0x10;
-
-    use core::convert::TryInto;
-    process.kernel_allocated_stack = Some(
-        process_stack
-            .try_into()
-            .expect("Process stack has incorrect length!"),
-    );
-
     // Wrap the process in a lock
     let process = RwLock::new(process);
     // Move the process into an Arc
@@ -343,6 +321,32 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
     guard.insert(pid, process);
 
     pid
+}
+
+pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
+    new_process_int(function, a0, |process| {
+        process.is_supervisor = true;
+        process.trap_frame.general_registers[Registers::Ra.idx()] =
+        process_return_address_supervisor as usize;
+            
+            
+        let process_stack = boxed_slice_with_alignment(4096, 4096, &0u8);
+        process.trap_frame.interrupt_stack = process_stack.as_ptr() as usize + TASK_STACK_SIZE - 0x10;
+
+        Box::leak(process_stack);
+
+        let process_stack = boxed_slice_with_alignment(TASK_STACK_SIZE, 4096, &0u8);
+        process.trap_frame.general_registers[Registers::Sp.idx()] =
+            process_stack.as_ptr() as usize + TASK_STACK_SIZE - 0x10;
+
+        use core::convert::TryInto;
+        process.kernel_allocated_stack = Some(
+            process_stack
+                .try_into()
+                .expect("Process stack has incorrect length!"),
+        );
+
+    })
 }
 
 #[no_mangle]

@@ -1,11 +1,6 @@
 use num_enum::{FromPrimitive, IntoPrimitive};
 
-use crate::{
-    context_switch,
-    cpu::Registers,
-    process::{self},
-    trap::TrapFrame,
-};
+use crate::{context_switch, cpu::Registers, paging::{EntryBits, Paging}, process::{self}, test_task::boxed_slice_with_alignment, trap::TrapFrame};
 
 #[repr(usize)]
 #[derive(IntoPrimitive, FromPrimitive, Debug)]
@@ -14,6 +9,10 @@ pub enum SyscallNumbers {
     Exit = 1,
     // Marks this task as "yielded" until it gets woken up by a Waker
     Yield = 2,
+    
+    // Page operations
+    AllocPages = 3,
+    FreePages = 4,
     // File descriptor operations
     Open = 0x10,
     Read,
@@ -50,6 +49,7 @@ pub fn do_syscall(frame: *mut TrapFrame) {
     let frame = unsafe { frame_raw.as_mut().unwrap_unchecked() };
 
     let number = SyscallNumbers::from(frame.general_registers[Registers::A7.idx()]);
+    frame.pc += 4;
     use SyscallNumbers::*;
     match number {
         Exit => {
@@ -57,6 +57,28 @@ pub fn do_syscall(frame: *mut TrapFrame) {
         }
         Yield => {
             syscall_yield(frame);
+        }
+        AllocPages => {
+            let virtual_address = frame.general_registers[Registers::A0.idx()];
+            let size = frame.general_registers[Registers::A1.idx()];
+            let size = size.unstable_div_ceil(4096) * 4096;
+            let flags = frame.general_registers[Registers::A2.idx()];
+            let paging_flags = flags & EntryBits::RWX;
+            
+            // TODO fix aliasing issues!
+            let mut root_table = unsafe { frame.satp_as_sv39_root_table() };
+            let new_pages = boxed_slice_with_alignment(size, 4096, &0);
+            
+            println!("Map {:x}", &new_pages[0] as *const _ as usize);
+            println!("To  {:x}", virtual_address);
+            
+            root_table.map(&new_pages[0] as *const _ as usize, virtual_address, size, flags | EntryBits::VALID | EntryBits::USER);
+            core::mem::forget(root_table);
+            core::mem::forget(new_pages);
+            
+        }
+        FreePages => {
+            
         }
         Unknown => {
             warn!(
@@ -76,7 +98,6 @@ pub fn syscall_exit(frame: &mut TrapFrame, return_code: usize) {
 }
 
 pub fn syscall_yield(frame: &mut TrapFrame) {
-    frame.pc += 4;
     // Set this process's state to yielded
     let p = process::try_get_process(&frame.pid);
     let mut guard = p.write();

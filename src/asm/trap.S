@@ -148,11 +148,15 @@ s_trap_vector:
 	
 	call	trap_handler
 	
-	# When we get here, we've returned from m_trap, restore registers
+	# When we get here, we've returned from trap_handler, restore registers
 	# and return.
-	# m_trap will return the return address via a0.
 
+	csrr t5, sscratch
+	lx a0, XLEN*32(t5)
 	csrw	sepc, a0
+	
+	lx a0, XLEN*37(t5)
+	csrw satp, a0
 	
 	restore_volatile_registers
 

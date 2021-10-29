@@ -1,4 +1,4 @@
-use crate::{HART_PANIC_COUNT, context_switch, cpu::{self, load_hartid, read_satp, read_sscratch}, external_interrupt, hart::get_this_hart_meta, interrupt_context_waker, process::delete_process, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
+use crate::{HART_PANIC_COUNT, context_switch, cpu::{self, load_hartid, read_satp, read_sscratch}, external_interrupt, hart::get_this_hart_meta, interrupt_context_waker, paging::{Table, sv39::RootTable}, process::delete_process, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
 
 /// A pointer to this struct is placed in sscratch
 #[derive(Default, Debug, Clone)] // No copy because they really shouldn't be copied and used without changing the PID
@@ -81,6 +81,12 @@ impl TrapFrame {
         (*cpu::read_sscratch()).flags &= !8;
         cpu::write_sscratch(self as *const TrapFrame as usize)
     }
+    
+    pub unsafe fn satp_as_sv39_root_table(&mut self) -> RootTable {
+        use crate::paging::sv39::RootTable;
+        RootTable(((self.satp << 12) as *mut Table).as_mut().unwrap())
+    }
+    
 }
 
 /// If sscratch equals original_trap_frame, then set sscratch to the boot frame for this hart
@@ -233,8 +239,9 @@ pub unsafe extern "C" fn trap_handler(
         match cause {
             8 | 9 | 10 | 11 => {
                 info!("Envionment call to us happened!");
-                
+                println!("{:x}", (*frame).pc);
                 syscall::do_syscall(frame);
+                println!("{:x}", (*frame).pc);
             }
             _ => {
                 error!(

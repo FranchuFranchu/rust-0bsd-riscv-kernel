@@ -21,12 +21,12 @@ impl<'a> Paging for RootTable<'a> {
         println!("Len {:?}", length);
         let mut vpn2_max = (((virtual_addr + length - 1) >> 30) & (ENTRY_COUNT - 1));
         let mut vpn1_max = (((virtual_addr + length - 1) >> 21) & (ENTRY_COUNT - 1));
-        let mut vpn0_max = (((virtual_addr + length - 1) >> 12) & (ENTRY_COUNT - 1));
+        let mut vpn0_max = (((virtual_addr + length) >> 12) & (ENTRY_COUNT - 1));
         println!("vp2 {:?} {:?}", vpn2_min, vpn2_max);
         println!("vp1 {:?} {:?}", vpn1_min, vpn1_max);
         println!("vp0 {:?} {:?}", vpn0_min, vpn0_max);
         //println!("{:?}", flags);
-        if vpn0_min > vpn0_max { vpn0_max = ENTRY_COUNT - 1 };
+        if vpn0_min > vpn0_max { vpn0_max = ENTRY_COUNT };
         if vpn1_min > vpn1_max { vpn1_max = ENTRY_COUNT - 1 };
         if vpn2_min > vpn2_max { vpn2_max = ENTRY_COUNT - 1 };
 
@@ -55,7 +55,7 @@ impl<'a> Paging for RootTable<'a> {
                     println!(" vp1 {} {:x} {:?}", vpn1, vpn2 << 30 | vpn1 << 21, entry);
                     if let Some(table) = unsafe { entry.try_as_table_mut() } {
                         //println!("T {:p}", table);
-                        for vpn0 in vpn0_min..vpn0_max+1 {
+                        for vpn0 in vpn0_min..vpn0_max {
                             let mut entry = &mut table[vpn0];
                             let virt = (vpn2 << 30 | vpn1 << 21 | vpn0 << 12);
                             entry.value =

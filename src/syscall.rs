@@ -1,6 +1,8 @@
+use core::slice;
+
 use num_enum::{FromPrimitive, IntoPrimitive};
 
-use crate::{context_switch, cpu::Registers, paging::{EntryBits, Paging}, process::{self}, test_task::boxed_slice_with_alignment, trap::TrapFrame};
+use crate::{context_switch, cpu::{Registers, read_satp, write_satp}, handle_backends, paging::{EntryBits, Paging}, process::{self}, test_task::boxed_slice_with_alignment, trap::TrapFrame};
 
 #[repr(usize)]
 #[derive(IntoPrimitive, FromPrimitive, Debug)]
@@ -69,9 +71,6 @@ pub fn do_syscall(frame: *mut TrapFrame) {
             let mut root_table = unsafe { frame.satp_as_sv39_root_table() };
             let new_pages = boxed_slice_with_alignment(size, 4096, &0);
             
-            println!("Map {:x}", &new_pages[0] as *const _ as usize);
-            println!("To  {:x}", virtual_address);
-            
             root_table.map(&new_pages[0] as *const _ as usize, virtual_address, size, flags | EntryBits::VALID | EntryBits::USER);
             core::mem::forget(root_table);
             core::mem::forget(new_pages);
@@ -80,6 +79,43 @@ pub fn do_syscall(frame: *mut TrapFrame) {
         FreePages => {
             
         }
+        
+        Open => {
+            use alloc::sync::Arc;
+            use crate::handle::Handle;
+            
+            let id = frame.general_registers[Registers::A0.idx()];
+            let options = [];
+            let backend_instance = crate::handle_backends::open(&id, &options);
+            let p = crate::process::try_get_process(&frame.pid);
+            let mut process_lock = p.write();
+            let new_fd_number = process_lock.handles.last_key_value().map(|s| s.0 + 1).unwrap_or(1);
+            core::mem::forget(backend_instance.clone());
+            process_lock.handles.insert(new_fd_number, Handle {
+                fd_id: new_fd_number,
+                backend: Arc::downgrade(&backend_instance),
+                backend_meta: 0,
+            });
+            frame.general_registers[Registers::A0.idx()] = new_fd_number;   
+        }
+        
+        Write => {
+            let id = frame.general_registers[Registers::A0.idx()];
+            
+            let old_satp = read_satp();
+            unsafe { write_satp(frame.satp) };
+            
+            // TODO make safe
+            let s = unsafe { slice::from_raw_parts(frame.general_registers[Registers::A1.idx()] as *const u8, frame.general_registers[Registers::A2.idx()]) };
+            
+            let p = crate::process::try_get_process(&frame.pid);
+            let mut process_lock = p.write();
+            
+            process_lock.handles[&id].backend.upgrade().as_ref().unwrap().write(s);
+            
+            unsafe { write_satp(old_satp) };
+        }
+        
         Unknown => {
             warn!(
                 "Unknown syscall {:?}",

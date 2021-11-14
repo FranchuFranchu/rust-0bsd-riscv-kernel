@@ -22,6 +22,8 @@ downcast-rs = { version = "1.2.0", default-features = false }
 lock_api = {version = "0.4", features = ["nightly"]}
 kernel_io = { path = "src/crates/kernel_io" }
 elf_rs = "0.1"
+kernel_as_register = { path = "src/crates/kernel_as_register"}
+smallvec = "*"
 
 [profile.dev]
 opt-level = 0

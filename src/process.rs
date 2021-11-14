@@ -12,7 +12,7 @@ use core::{
     task::{RawWaker, RawWakerVTable, Waker},
 };
 
-use crate::{asm::do_supervisor_syscall_0, context_switch, cpu::{self, load_hartid, read_sscratch, Registers}, lock::shared::RwLock, scheduler::schedule_next_slice, test_task::boxed_slice_with_alignment, trap::{in_interrupt_context, use_boot_frame_if_necessary, TrapFrame}};
+use crate::{asm::do_supervisor_syscall_0, context_switch, cpu::{self, load_hartid, read_sscratch, Registers}, handle::Handle, lock::shared::RwLock, scheduler::schedule_next_slice, test_task::boxed_slice_with_alignment, trap::{in_interrupt_context, use_boot_frame_if_necessary, TrapFrame}};
 
 pub const TASK_STACK_SIZE: usize = 4096 * 8;
 pub const PROCESS_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
@@ -24,13 +24,6 @@ pub const PROCESS_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
 pub static PROCESSES: RwLock<BTreeMap<usize, Arc<RwLock<Process>>>> = RwLock::new(BTreeMap::new());
 pub static PROCESS_SCHED_QUEUE: RwLock<Vec<Weak<RwLock<Process>>>> = RwLock::new(Vec::new());
 
-// 0BSD
-#[derive(Debug)]
-pub struct FileDescriptor {
-    fd_id: usize,
-    backend: usize,
-    backend_meta: usize,
-}
 
 #[derive(Debug)]
 pub enum ProcessState {
@@ -49,7 +42,7 @@ pub struct Process {
     /// The process ID of the process can be fetched by getting trap_frame.pid
     pub is_supervisor: bool,
     pub state: ProcessState,
-    pub file_descriptors: BTreeMap<usize, FileDescriptor>,
+    pub handles: BTreeMap<usize, Handle>,
     pub trap_frame: Pin<Box<TrapFrame>>,
     pub name: Option<String>,
     no_op_yield_count: AtomicUsize,
@@ -295,7 +288,7 @@ pub fn new_process_int(function: usize, a0: usize, mut constructor: impl FnMut(&
 
     let mut process = Process {
         is_supervisor: false,
-        file_descriptors: BTreeMap::new(),
+        handles: BTreeMap::new(),
         trap_frame: trapframe_box,
         state: ProcessState::Pending,
         kernel_allocated_stack: None,

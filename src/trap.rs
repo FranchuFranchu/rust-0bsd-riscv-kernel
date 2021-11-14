@@ -1,4 +1,4 @@
-use crate::{HART_PANIC_COUNT, context_switch, cpu::{self, load_hartid, read_satp, read_sscratch}, external_interrupt, hart::get_this_hart_meta, interrupt_context_waker, paging::{Table, sv39::RootTable}, process::delete_process, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
+use crate::{HART_PANIC_COUNT, context_switch, cpu::{self, load_hartid, read_satp, read_sscratch, read_sstatus}, external_interrupt, hart::get_this_hart_meta, interrupt_context_waker, paging::{Table, sv39::RootTable}, process::delete_process, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
 
 /// A pointer to this struct is placed in sscratch
 #[derive(Default, Debug, Clone)] // No copy because they really shouldn't be copied and used without changing the PID
@@ -238,17 +238,17 @@ pub unsafe extern "C" fn trap_handler(
     } else {
         match cause {
             8 | 9 | 10 | 11 => {
-                info!("Envionment call to us happened!");
-                println!("{:x}", (*frame).pc);
+                info!("Environment call to us happened!");
                 syscall::do_syscall(frame);
-                println!("{:x}", (*frame).pc);
             }
             _ => {
                 error!(
-                    "Error with cause: {:?} pc: {:X} *pc: {:X}",
+                    "Error with cause: {:?} pc: {:X} *pc: {:X} tval: {:X} supervisor: {:?}",
                     cause,
                     unsafe { (*frame).pc },
-                    unsafe { *((*frame).pc as *const u32) }
+                    unsafe { *((*frame).pc as *const u32) },
+                    unsafe { tval as *const u32 as usize },
+                    unsafe { read_sstatus() & 1 << 8}
                 );
                 // Kill the process
                 delete_process((*frame).pid);

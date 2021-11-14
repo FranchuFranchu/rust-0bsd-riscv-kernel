@@ -87,4 +87,11 @@ impl Ns16550a {
             Some(unsafe { (*self.registers).byte_io.read() })
         }
     }
+    
+    pub fn write_bytes(&mut self, s: &[u8]) -> fmt::Result {
+        for byte in s.iter() {
+            self.put(*byte)
+        }
+        Ok(())
+    }
 }

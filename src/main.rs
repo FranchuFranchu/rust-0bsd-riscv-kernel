@@ -16,6 +16,7 @@
     label_break_value,
     int_roundings,
     type_ascription,
+    map_first_last,
     global_asm
 )]
 #![cfg_attr(not(test), no_std)]
@@ -149,6 +150,8 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 
     timer_queue::init();
     timer_queue::init_hart();
+    
+    handle_backends::initialize_constructors();
 
     // Finally, enable interrupts in the cpu level
     // SAFETY: We're enabling interrupts, since we've set stvec already that's not dangerous
@@ -159,7 +162,7 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 
         let mut sstatus: usize;
         asm!("csrr {0}, sstatus", out(reg)(sstatus),);
-        sstatus |= 1 << 1;
+        sstatus |= 1 << 1 | 1 << 18;
         asm!("csrw sstatus, {0}" , in(reg) ( sstatus));
     }
     let tab = RootTable(unsafe { &mut paging::ROOT_PAGE });
@@ -262,7 +265,7 @@ fn panic(info: &PanicInfo) -> ! {
     } else {
         println!("\"{}\" at unknown location", message);
     }
-
+    
     // Shutdown immediately
     sbi::shutdown(0);
 
@@ -291,6 +294,7 @@ pub fn status_summary() {
 
 pub mod allocator;
 pub mod asm;
+pub mod as_register;
 pub mod backtrace;
 pub mod context_switch;
 pub mod device_setup;
@@ -300,6 +304,7 @@ pub mod fdt;
 pub mod filesystem;
 pub mod future;
 pub mod handle;
+pub mod handle_backends;
 pub mod hart;
 pub mod interrupt_context_waker;
 pub mod lock;
@@ -314,3 +319,4 @@ pub mod test_task;
 pub mod timeout;
 pub mod timer_queue;
 pub mod trap;
+pub mod virtual_buffers;

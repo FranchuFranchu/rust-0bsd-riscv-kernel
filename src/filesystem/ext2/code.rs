@@ -28,7 +28,9 @@ trait DivCeil {
     }
 }
 
-#[derive(Debug)]
+use crate::as_register::AsRegister;
+
+#[derive(Debug, AsRegister)]
 pub enum Ext2Error {
     OutOfBounds(usize),
     BlockDeviceError(GenericBlockDeviceError),

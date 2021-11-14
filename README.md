@@ -18,7 +18,8 @@ Stop QEMU with Ctrl-A and then X
 - [X] Fix bug where process trap frame would still be used after removing the process. This doesn't cause bugs until new allocations are made. (use-after-free)
 - [ ] Make the future.rs executor code cleaner
 - [X] Kernel locks for kernel interrupt contexts, mixed contexts, and thread contexts (just missing performant thread-only locks that use wakers)
-- [ ] Userspace processes
+- [X] Userspace processes
+- [ ] Elf loader: Add support for multiple segments in the same page
 
 ## Some explanations for parts of the code
 

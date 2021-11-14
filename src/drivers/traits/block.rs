@@ -74,7 +74,8 @@ where
     }
 }
 
-#[derive(Debug)]
+use crate::as_register::AsRegister;
+#[derive(Debug, AsRegister)]
 pub enum GenericBlockDeviceError {
     OutOfBounds,
 }

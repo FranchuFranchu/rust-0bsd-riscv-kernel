@@ -201,6 +201,7 @@ pub fn test_task_3() {
         
         let mut root_table = crate::paging::sv39::RootTable(&mut new_page_table);
         
+        root_table.identity_map();
         
         let elf_file = elf_rs::Elf::from_bytes(&t.1);
         let mut allocated_segments = Vec::new();
@@ -210,15 +211,19 @@ pub fn test_task_3() {
             for p in e.program_header_iter() {
                 // This is our buffer with the program's code
                 let mut segment = boxed_slice_with_alignment(p.ph.memsz() as usize, 4096, &0u8);
-                println!("{:x}", p.ph.vaddr());
-                println!("{:?}", segment);
-                info!("{:x}", &segment[0] as *const u8 as usize);
+                info!("{:x} {:x}", p.ph.vaddr(), p.ph.vaddr() + p.ph.memsz());
                 // Copy segment to buffer
                 segment.copy_from_slice(p.segment());
                 //root_table.map(&segment[0] as *const u8 as usize, p.ph.vaddr() as usize, (p.ph.memsz() as usize).max(4096), EntryBits::EXECUTE | EntryBits::VALID | EntryBits::READ);
-                root_table.map(&segment[0] as *const u8 as usize, p.ph.vaddr() as usize, (p.ph.memsz() as usize).max(4096), EntryBits::EXECUTE | EntryBits::VALID | EntryBits::READ | EntryBits::USER);
+                root_table.map(&segment[0] as *const u8 as usize, p.ph.vaddr() as usize, (p.ph.memsz() as usize).max(4096), 
+                    if p.ph.flags() & 1 != 0 { EntryBits::EXECUTE} else { 0 } 
+                    | if p.ph.flags() & 2 != 0 { EntryBits::WRITE} else { 0 } 
+                    | if p.ph.flags() & 4 != 0 { EntryBits::READ} else { 0 } 
+                    | EntryBits::VALID |  EntryBits::USER
+                );
                 allocated_segments.push(segment);
             }
+            
 
             for s in e.section_header_iter() {
                 //println!("{:x?}", s);
@@ -227,10 +232,11 @@ pub fn test_task_3() {
             let s = e.lookup_section(".text");
             //println!("s {:?}", s);
             
+            println!("{:?}", allocated_segments);
             
             unsafe { println!("{:x}", root_table.0.entries[0].as_table_mut()[0].as_table_mut()[32].value); }
             process::new_process_int(e.header().entry_point() as usize, 0, |process| {
-                crate::paging::map_critical_kernel_address_space(&mut root_table, &*process.trap_frame as *const _ as usize);
+                //crate::paging::map_critical_kernel_address_space(&mut root_table, &*process.trap_frame as *const _ as usize);
                 // Create a buffer with the program's stack
                 let program_stack = boxed_slice_with_alignment(4096, 4096, &0u8);
                 root_table.map(&program_stack[0] as *const _ as usize, 0x40000, 4096, EntryBits::VALID | EntryBits::READ | EntryBits::WRITE | EntryBits::USER);

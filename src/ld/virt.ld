@@ -64,6 +64,7 @@ SECTIONS
   PROVIDE(_stack_start = .);
   PROVIDE(_heap_start = .);
   PROVIDE(_heap_end = 0x80000000+128M);
+  PROVIDE(_free_space_start = 0x80000000+128M);
   PROVIDE(_uart_start = 0x10000000);
   PROVIDE(_virtio_start = 0x10001000);
   PROVIDE(_virtio_end = 0x10008000);

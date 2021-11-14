@@ -8,9 +8,10 @@ use alloc::vec::Vec;
 use alloc::string::String;
 
 use async_trait::async_trait;
+use kernel_as_register::AsRegister;
 
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, AsRegister)]
 #[non_exhaustive]
 pub enum ErrorKind {
     /// An entity was not found, often a file.
@@ -182,19 +183,19 @@ pub enum ErrorKind {
     Uncategorized,
 }
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, AsRegister)]
 pub enum Error {
     Os(i32),
     Simple(ErrorKind),
     // &str is a fat pointer, but &&str is a thin pointer.
-    SimpleMessage(ErrorKind, &'static &'static str),
+    SimpleMessage(ErrorKind/*, &'static &'static str*/),
 }
 
 use core::str::Utf8Error;
 
 impl From<Utf8Error> for Error {
     fn from(e: Utf8Error) -> Error {
-        Error::new_const(ErrorKind::InvalidData, &"stream did not contain valid UTF-8")
+        Error::new_simple(ErrorKind::InvalidData)
     }
 }
 
@@ -252,12 +253,15 @@ pub type Result<T> = core::result::Result<T, Error>;
 
 impl Error {
     pub(crate) const fn new_const(kind: ErrorKind, message: &'static &'static str) -> Error {
-        Self::SimpleMessage(kind, message)
+        Self::SimpleMessage(kind)
+    }
+    pub(crate) const fn new_simple(kind: ErrorKind) -> Error {
+        Self::Simple(kind)
     }
     pub fn kind(&self) -> &ErrorKind {
         match self {
             Self::Simple(kind) => kind,
-            Self::SimpleMessage(kind, e) => kind,
+            Self::SimpleMessage(kind) => kind,
             _ => { panic!("not an error with a kind") }
         }
     }
@@ -337,7 +341,7 @@ pub trait Read {
             }
         }
         if !buf.is_empty() {
-            Err(Error::new_const(ErrorKind::UnexpectedEof, &"failed to fill whole buffer"))
+            Err(Error::new_simple(ErrorKind::UnexpectedEof))
         } else {
             Ok(Ok(()))
         }

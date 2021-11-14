@@ -7,3 +7,5 @@ edition = "2018"
 
 [dependencies]
 async-trait = "0.1"
+kernel_as_register = { path = "../kernel_as_register" }
+smallvec = "*"

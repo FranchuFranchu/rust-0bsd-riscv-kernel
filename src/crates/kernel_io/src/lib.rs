@@ -348,3 +348,10 @@ pub trait Read {
     }
     
 }
+
+#[async_trait]
+pub trait Write {
+    type Error: Send + Sync;
+    
+    async fn write(&mut self, buf: &[u8]) -> core::result::Result<usize, Self::Error>;
+}

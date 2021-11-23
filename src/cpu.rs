@@ -1,3 +1,5 @@
+//! Functions that run specific RISC-V instructions
+
 // this enum is from osblog
 #[derive(Copy, Clone)]
 #[repr(usize)]

@@ -1,3 +1,5 @@
+//! A logger for the kernel
+
 use log::{Level, Metadata, Record};
 
 use crate::{lock::shared::Mutex, trap::in_interrupt_context};

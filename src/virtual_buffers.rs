@@ -1,7 +1,7 @@
-use core::ffi::c_void;
 
-use crate::lock::shared::RwLock;
-use alloc::vec::Vec;
+
+
+
 
 #[derive(Eq, PartialEq, Ord)]
 struct VirtualBuffer {
@@ -45,7 +45,7 @@ extern "C" {
 impl VirtualBufferRegistry {
 	fn new_buffer(&mut self, phys_addr: usize, size: usize) {
 		let buf_virtual_address =  {
-			let mut iter1 = self.buffers.iter();
+			let iter1 = self.buffers.iter();
 			let mut iter2 = self.buffers.iter();
 			iter2.next();
 			let mut insert_into = None;
@@ -59,7 +59,7 @@ impl VirtualBufferRegistry {
 			if let Some(insert_into) = insert_into {
 				insert_into
 			} else {
-				self.buffers.iter().skip(self.buffers.len()-1).next().unwrap().virt_end()
+				self.buffers.iter().nth(self.buffers.len()-1).unwrap().virt_end()
 			}
 		};
 		let buffer = VirtualBuffer {

@@ -1,7 +1,6 @@
 use core::{
     alloc::{GlobalAlloc, Layout},
     ptr::NonNull,
-    sync::atomic::Ordering,
 };
 
 use slab_allocator_rs::Heap as SlabAllocator;

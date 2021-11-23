@@ -14,14 +14,14 @@ pub struct RootTable<'a>(pub &'a mut Table);
 
 impl<'a> Paging for RootTable<'a> {
     fn map(&mut self, physical_addr: usize, virtual_addr: usize, length: usize, flags: usize) {
-        let vpn2_min = ((virtual_addr >> 30) & (ENTRY_COUNT - 1));
-        let vpn1_min = ((virtual_addr >> 21) & (ENTRY_COUNT - 1));
-        let vpn0_min = ((virtual_addr >> 12) & (ENTRY_COUNT - 1));
+        let vpn2_min = (virtual_addr >> 30) & (ENTRY_COUNT - 1);
+        let vpn1_min = (virtual_addr >> 21) & (ENTRY_COUNT - 1);
+        let vpn0_min = (virtual_addr >> 12) & (ENTRY_COUNT - 1);
         
         //println!("Len {:?}", length);
-        let mut vpn2_max = (((virtual_addr + length - 1) >> 30) & (ENTRY_COUNT - 1));
-        let mut vpn1_max = (((virtual_addr + length - 1) >> 21) & (ENTRY_COUNT - 1));
-        let mut vpn0_max = (((virtual_addr + length) >> 12) & (ENTRY_COUNT - 1));
+        let mut vpn2_max = ((virtual_addr + length - 1) >> 30) & (ENTRY_COUNT - 1);
+        let mut vpn1_max = ((virtual_addr + length - 1) >> 21) & (ENTRY_COUNT - 1);
+        let mut vpn0_max = ((virtual_addr + length) >> 12) & (ENTRY_COUNT - 1);
         //println!("vp2 {:?} {:?}", vpn2_min, vpn2_max);
         //println!("vp1 {:?} {:?}", vpn1_min, vpn1_max);
         //println!("vp0 {:?} {:?}", vpn0_min, vpn0_max);
@@ -57,7 +57,7 @@ impl<'a> Paging for RootTable<'a> {
                         //println!("T {:p}", table);
                         for vpn0 in vpn0_min..vpn0_max {
                             let mut entry = &mut table[vpn0];
-                            let virt = (vpn2 << 30 | vpn1 << 21 | vpn0 << 12);
+                            let virt = vpn2 << 30 | vpn1 << 21 | vpn0 << 12;
                             entry.value =
                                 (virt >> 2 | flags).wrapping_add(offset);
                             //println!("  vp0 {} {:x} {:?}", vpn0, virt, entry);

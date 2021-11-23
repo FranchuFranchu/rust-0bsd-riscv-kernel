@@ -1,3 +1,5 @@
+//! A RISC-V kernel written in Rust
+
 #![feature(
     asm,
     naked_functions,

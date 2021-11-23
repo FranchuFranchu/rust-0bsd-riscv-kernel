@@ -1,3 +1,5 @@
+//! Abstractions over the RISC-V Supervisor Binary Interface to communicate with M-mode code
+
 use crate::cpu;
 
 // See https://github.com/riscv/riscv-sbi-doc/blob/master/riscv-sbi.adoc

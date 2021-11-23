@@ -1,3 +1,5 @@
+//! A kernel task that reads the device tree and initializes drivers
+
 use alloc::{sync::Arc, vec::Vec};
 use core::{
     convert::TryInto,
@@ -14,6 +16,7 @@ use crate::{
     lock::shared::{Mutex, RwLock},
 };
 
+/// Future that can be awaited to call the waker when device setup is done
 pub struct DeviceSetupDoneFuture {
     wakers: Mutex<Vec<Waker>>,
     is_done: AtomicBool,
@@ -57,6 +60,7 @@ impl DeviceSetupDoneFuture {
 
 static IS_DONE: RwLock<Option<DeviceSetupDoneFutureShared>> = RwLock::new(None);
 
+/// Returns a DeviceSetupIsDoneFuture instance
 pub fn is_done_future() -> DeviceSetupDoneFutureShared {
     let mut lock = IS_DONE.write();
     match &mut *lock {

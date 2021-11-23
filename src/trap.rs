@@ -1,3 +1,5 @@
+//! A function that runs when a trap happens
+
 use crate::{HART_PANIC_COUNT, context_switch, cpu::{self, load_hartid, read_satp, read_sscratch, read_sstatus}, external_interrupt, hart::get_this_hart_meta, interrupt_context_waker, paging::{Table, sv39::RootTable}, process::delete_process, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
 
 /// A pointer to this struct is placed in sscratch

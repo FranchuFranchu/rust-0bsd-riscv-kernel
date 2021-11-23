@@ -1,3 +1,5 @@
+//! Creating, switching to, and other functions related to process management (both kernel and user)
+
 use alloc::{
     boxed::Box,
     collections::BTreeMap,
@@ -139,17 +141,17 @@ impl Process {
     // These are the waker methods
     // They turn a process in Yielded state to a process in Pending state
     // The data parameter is the return value of into_raw for a Box<Weak<Process>>
-    pub unsafe fn waker_clone(data: *const ()) -> RawWaker {
+    unsafe fn waker_clone(data: *const ()) -> RawWaker {
         let obj = Box::from_raw(data as *mut Weak<RwLock<Self>>);
         let new_waker = RawWaker::new(Box::into_raw(obj.clone()) as _, &PROCESS_WAKER_VTABLE);
         Box::leak(obj);
         new_waker
     }
-    pub unsafe fn waker_wake(data: *const ()) {
+    unsafe fn waker_wake(data: *const ()) {
         Self::waker_wake_by_ref(data);
         Self::waker_drop(data)
     }
-    pub unsafe fn waker_wake_by_ref(data: *const ()) {
+    unsafe fn waker_wake_by_ref(data: *const ()) {
         // The box re-acquires ownership of the RwLock<Self>
         let process: Box<Weak<RwLock<Self>>> = Box::from_raw(data as _);
         let process_internal = process.upgrade().expect("Waited process is gone!");
@@ -157,7 +159,7 @@ impl Process {
         // Make the box lose ownership of the RwLock<Self>
         Box::leak(process);
     }
-    pub unsafe fn waker_drop(data: *const ()) {
+    unsafe fn waker_drop(data: *const ()) {
         // Re-create the box for this waker and then drop it to prevent memory leaks
         drop(Box::from_raw(data as *mut Weak<RwLock<Self>>));
     }
@@ -174,7 +176,8 @@ impl Process {
     }
 
     /// This creates a Waker that makes this process a Pending process when woken
-    /// The Pending process will be eventually scheduled
+    ///
+    /// The Pending process will be eventually scheduled 
     pub fn construct_waker(&self) -> Waker {
         // Create a weak pointer to a RwLock<Self> and then erase its type
         let raw_pointer =

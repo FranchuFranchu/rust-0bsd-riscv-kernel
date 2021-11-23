@@ -1,4 +1,4 @@
-// Include assembly files
+//! Includes for assembly files, and declarations for functions defined there
 
 #[cfg(all(target_feature = "f", target_arch = "riscv64"))]
 global_asm!(include_str!("asm/arch/rv64f.S"));

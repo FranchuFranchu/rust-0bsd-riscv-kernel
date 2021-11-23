@@ -8,28 +8,28 @@ pub enum StandardHandleErrors {
 }
 
 pub trait HandleBackend {
+    fn create_singleton() -> alloc::sync::Arc<dyn HandleBackend + Send + Sync> where Self: Sized;
     
-    fn open(options: &[usize]) -> alloc::sync::Arc<dyn HandleBackend + Send + Sync> where Self: Sized;
+    fn open(&self, id: &usize, options: &[usize]);
     
     fn name(&self) -> &'static str;
     
-    
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, usize> {
+    fn read(&self, id: &usize, buf: &mut [u8]) -> Result<usize, usize> {
         Err(StandardHandleErrors::Unimplemented as usize)
     }
-    fn write(&self, buf: &[u8]) -> Result<usize, usize> {
+    fn write(&self, id: &usize, buf: &[u8]) -> Result<usize, usize> {
         Err(StandardHandleErrors::Unimplemented as usize)
     }
-    fn size_hint(&mut self) -> (usize, Option<usize>) {
+    fn size_hint(&self, id: &usize) -> (usize, Option<usize>) {
         (0, None)
     }
-    fn seek(&mut self, position: &usize) -> Result<(), usize> {
+    fn seek(&self, id: &usize, position: &usize) -> Result<(), usize> {
         Err(StandardHandleErrors::Unimplemented as usize)
     }
-    fn tell(&mut self) -> Result<usize, usize> {
+    fn tell(&self, id: &usize) -> Result<usize, usize> {
         Err(StandardHandleErrors::Unimplemented as usize)
     }
-    fn split(&mut self) -> Option<NonZeroUsize> {
+    fn split(&self, id: &usize) -> Option<NonZeroUsize> {
         None
     }
 }

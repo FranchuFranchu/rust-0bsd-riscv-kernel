@@ -2,7 +2,7 @@ use core::slice;
 
 use num_enum::{FromPrimitive, IntoPrimitive};
 
-use crate::{context_switch, cpu::{Registers, read_satp, write_satp}, handle_backends, paging::{EntryBits, Paging}, process::{self}, test_task::boxed_slice_with_alignment, trap::TrapFrame};
+use crate::{context_switch, cpu::{Registers, read_satp, write_satp}, paging::{EntryBits, Paging}, process::{self}, test_task::boxed_slice_with_alignment, trap::TrapFrame};
 
 #[repr(usize)]
 #[derive(IntoPrimitive, FromPrimitive, Debug)]
@@ -86,10 +86,12 @@ pub fn do_syscall(frame: *mut TrapFrame) {
             
             let id = frame.general_registers[Registers::A0.idx()];
             let options = [];
-            let backend_instance = crate::handle_backends::open(&id, &options);
+            
             let p = crate::process::try_get_process(&frame.pid);
             let mut process_lock = p.write();
             let new_fd_number = process_lock.handles.last_key_value().map(|s| s.0 + 1).unwrap_or(1);
+            
+            let backend_instance = crate::handle_backends::open(&id, &new_fd_number, &options);
             core::mem::forget(backend_instance.clone());
             process_lock.handles.insert(new_fd_number, Handle {
                 fd_id: new_fd_number,
@@ -109,9 +111,9 @@ pub fn do_syscall(frame: *mut TrapFrame) {
             let s = unsafe { slice::from_raw_parts(frame.general_registers[Registers::A1.idx()] as *const u8, frame.general_registers[Registers::A2.idx()]) };
             
             let p = crate::process::try_get_process(&frame.pid);
-            let mut process_lock = p.write();
+            let process_lock = p.write();
             
-            process_lock.handles[&id].backend.upgrade().as_ref().unwrap().write(s);
+            process_lock.handles[&id].backend.upgrade().as_ref().unwrap().write(&id, s).unwrap();
             
             unsafe { write_satp(old_satp) };
         }

@@ -1,6 +1,8 @@
+//! Abstractions over supervisor-mode paging
+
 use core::ops::{Index, IndexMut};
 use core::fmt::Debug;
-use core::fmt::Formatter;
+
 
 pub mod sv32;
 #[cfg(target_arch = "riscv64")]
@@ -125,11 +127,14 @@ impl Debug for Entry {
         } else {
             if self.value & READ != 0 {
                 f.write_char('R')?;
-            } if self.value & WRITE  != 0 {
+            }
+            if self.value & WRITE  != 0 {
                 f.write_char('W')?;
-            } if self.value & EXECUTE  != 0 {
+            }
+            if self.value & EXECUTE  != 0 {
                 f.write_char('X')?;
-            } if self.value & USER  != 0 {
+            }
+            if self.value & USER  != 0 {
                 f.write_char('U')?;
             }
             f.write_char(' ')?;

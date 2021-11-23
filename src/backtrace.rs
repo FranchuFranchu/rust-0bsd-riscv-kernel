@@ -1,3 +1,5 @@
+//! WIP. Will include code to backtrace
+
 use crate::{cpu::Registers, trap::TrapFrame};
 
 extern "C" {

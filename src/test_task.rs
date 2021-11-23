@@ -1,14 +1,15 @@
-//! The functions here are tasks that can be run to make sure that complex kernel tasks
+//! The functions here are testing tasks that can be run to make sure that other complex kernel tasks
 //! won't crash
 
-use aligned::Aligned;
+
 use alloc::{collections::BTreeSet, vec::Vec};
+use kernel_io::Write;
 use core::{
     ops::{BitAnd, BitXor},
     pin::Pin,
     task::Context,
 };
-use core::iter::FromIterator;
+
 use core::mem::size_of;
 use core::mem::MaybeUninit;
 use alloc::alloc::Layout;
@@ -191,6 +192,12 @@ pub fn test_task_3() {
         info!("{:?}", ext2.read_inode(2).await.unwrap());
         
         
+        let inode = ext2.get_path("/writeable-file.txt").await.unwrap().unwrap();
+        println!("INODE {:?} {:?}", inode, ext2.read_inode(inode).await.unwrap());
+        let mut handle = ext2.inode_handle(inode).await.unwrap();
+        handle.write("Jello warla".as_bytes()).await.unwrap();
+        
+        return;
         let inode = ext2.get_path("/main").await.unwrap().unwrap();
         let mut handle = ext2.inode_handle(inode).await.unwrap();
         use kernel_io::Read;

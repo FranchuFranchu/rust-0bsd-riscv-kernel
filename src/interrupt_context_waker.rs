@@ -1,9 +1,13 @@
 //! This module provides a function to create Wakers that
 //! run a specific function on interrupt-mode when woken
+//!
 //! Note that the function will only be run when an interrupt happens
-//! (or if it's woken from an interrupt context, then it's run at the end of the interrupt handler)
-//! Functions in interrupt contexts can wake up other InterruptContextWakers with no risk of stack overflow or deadlocks
-//! This is useful for giving functions the same context whether they're ran from a kernel thread or from an interrupt context
+//! (or if it's woken from an interrupt context, then it's run at the end of the interrupt handler).
+//!
+//! Functions in interrupt contexts can wake up other InterruptContextWakers with no risk of stack overflow or deadlocks.
+//!
+//! This is useful for giving functions the same context whether they're ran from a kernel thread or from an interrupt context.
+//!
 //! *Interrupt tasks should NOT have blocking operations!*
 
 use alloc::{boxed::Box, collections::VecDeque, sync::Arc, task::Wake};

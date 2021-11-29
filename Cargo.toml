@@ -24,8 +24,14 @@ kernel_io = { path = "src/crates/kernel_io" }
 elf_rs = "0.1"
 kernel_as_register = { path = "src/crates/kernel_as_register"}
 smallvec = "*"
+gimli = { default-features = false, features = ["read"]}
 
 [profile.dev]
 opt-level = 0
 lto = false
 panic = "abort"
+
+[features]
+backtrace = []
+autodebug = ["backtrace"]
+default = ["autodebug"]

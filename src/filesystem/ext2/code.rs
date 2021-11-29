@@ -146,8 +146,7 @@ impl Ext2 {
         
         block[byte_offset as usize] &= !(1 << bit_offset);
         
-        let (returned_buffer, result) = self.write_block(block_group_descriptor.block_bitmap, block).await;
-        result?;
+        self.write_block(block_group_descriptor.block_bitmap, &mut *block).await?;
         
         
         Ok(())
@@ -178,8 +177,7 @@ impl Ext2 {
                 // Mark this block as used
                 *byte |= 1 << unset_bit;
                 
-                let (returned_buffer, result) = self.write_block(block_group_descriptor.block_bitmap, block).await;
-                result?;
+                self.write_block(block_group_descriptor.block_bitmap, &mut *block).await?;
                 
                 return Ok(block_number + unset_bit);
             }
@@ -212,9 +210,8 @@ impl Ext2 {
                 // Mark this inode as used
                 *byte |= 1 << unset_bit;
                 
-                let (returned_buffer, result) = self.write_block(block_group_descriptor.block_bitmap, block).await;
-                result?;
                 
+                self.write_block(block_group_descriptor.block_bitmap, &mut *block).await?;
                 return Ok(inode_number + unset_bit);
             }
         }
@@ -264,9 +261,7 @@ impl Ext2 {
             
         v[inode_byte_offset..inode_byte_offset + core::mem::size_of::<Inode>()].copy_from_slice(unsafe { core::slice::from_raw_parts(value as *const Inode as *const u8, core::mem::size_of::<Inode>()) });
         
-        self
-            .write_block(inode_table_block + inode_block_offset, v)
-            .await.1?;
+        self.write_block(inode_table_block + inode_block_offset, &mut *v).await?;
         
         Ok(())
     }
@@ -297,14 +292,13 @@ impl Ext2 {
     pub async fn read_inode_block_cache(&self, inode: &Inode, block: u32) -> Result<Box<[u8]>> {
         Ok(self.read_block(self.get_inode_block(inode, block).await?).await?)
     }
-    pub async fn write_inode_block(&self, inode: u32, block: u32, source_buffer: Box<[u8]>) -> Result<Box<[u8]>> {
+    pub async fn write_inode_block(&self, inode: u32, block: u32, source_buffer: &[u8]) -> Result<()> {
         self.write_inode_block_cache(&self.read_inode(inode).await?, block, source_buffer)
             .await
     }
-    pub async fn write_inode_block_cache(&self, inode: &Inode, block: u32, source_buffer: Box<[u8]>) -> Result<Box<[u8]>> {
-        let (buffer, err) = self.write_block(self.get_inode_block(inode, block).await?, source_buffer).await;
-        err?;
-        Ok(buffer)
+    pub async fn write_inode_block_cache(&self, inode: &Inode, block: u32, source_buffer: &[u8]) -> Result<()> {
+        self.write_block(self.get_inode_block(inode, block).await?, source_buffer).await?;
+        Ok(())
     }
     pub async fn inode_handle<'this>(&'this self, inode: u32) -> Result<InodeHandle<'this>> {
         Ok(InodeHandle {
@@ -315,13 +309,12 @@ impl Ext2 {
         })
     }
 
-    pub async fn write_block(&self, block: u32, buffer: Box<[u8]>) -> (Box<[u8]>, Result<()>) {
-        println!("{:?} {:?}", block, &buffer[..20]);
+    pub async fn write_block(&self, block: u32, buffer: &[u8]) -> Result<()> {
         let ret =
             GenericBlockDeviceExt::write(&*self.device, self.block_to_sector(block), buffer).await;
             
 
-        (ret.0, ret.1.map_err(|s| (s.into(): Ext2Error)))
+        ret.map_err(|s| (s.into(): Ext2Error))
     }
     pub async fn find_entry_in_directory(
         &self,
@@ -526,7 +519,7 @@ impl<'a> Write for InodeHandle<'a> {
             self.position += destination_buffer.len();
             position_in_buffer += destination_buffer.len();
             drop(destination_buffer);
-            self.fs.write_inode_block_cache(&self.inode, current_block, block).await?;
+            self.fs.write_inode_block_cache(&self.inode, current_block, &block).await?;
             
         };
         

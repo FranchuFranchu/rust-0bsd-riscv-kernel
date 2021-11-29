@@ -163,6 +163,10 @@ impl Process {
         // Re-create the box for this waker and then drop it to prevent memory leaks
         drop(Box::from_raw(data as *mut Weak<RwLock<Self>>));
     }
+    
+    /// This process makes this process pending if it's yielded
+    ///
+    /// If it isn't, then it will "queue up" the wake-up signal to the process so that it can be "consumed" the next time the process should yield
     pub fn make_pending_when_possible(&mut self) {
         match self.state {
             ProcessState::Yielded => {

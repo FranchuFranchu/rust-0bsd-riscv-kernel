@@ -9,10 +9,7 @@ use itertools::Itertools;
 use volatile_register::{RO, RW, WO};
 
 use self::block::VirtioBlockDevice;
-use crate::{
-    lock::shared::{Mutex, RwLock},
-    paging::PAGE_ALIGN,
-};
+use crate::{lock::shared::{Mutex, RwLock}, paging::PAGE_ALIGN, unsafe_buffer::{UnsafeSlice, UnsafeSliceMut}};
 
 // from xv6
 pub enum StatusField {
@@ -316,6 +313,38 @@ impl SplitVirtqueue {
             self.new_descriptor_from_address(buffer.as_ptr() as _, buffer.len(), false, chain)
         }
     }
+    
+    pub fn new_descriptor_from_unsafe_slice(
+        &mut self,
+        buffer: UnsafeSlice<u8>,
+        device_writable: bool,
+        chain: Option<u16>,
+    ) -> u16 {
+        unsafe {
+            self.new_descriptor_from_address(
+                buffer.address() as _,
+                buffer.length(),
+                device_writable,
+                chain,
+            )
+        }
+    }
+    pub fn new_descriptor_from_unsafe_slice_mut(
+        &mut self,
+        buffer: UnsafeSliceMut<u8>,
+        device_writable: bool,
+        chain: Option<u16>,
+    ) -> u16 {
+        unsafe {
+            self.new_descriptor_from_address(
+                buffer.address() as _,
+                buffer.length(),
+                device_writable,
+                chain,
+            )
+        }
+    }
+
 
     pub fn new_descriptor_from_sized<T: Sized>(
         &mut self,

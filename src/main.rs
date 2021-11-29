@@ -12,6 +12,8 @@
     unchecked_math,
     const_btree_new,
     unsized_fn_params,
+    exclusive_range_pattern,
+    mixed_integer_ops,
     box_into_inner,
     unsized_locals,
     async_stream,
@@ -23,7 +25,11 @@
 )]
 #![cfg_attr(not(test), no_std)]
 #![no_main]
-#![allow(incomplete_features, dead_code, unused_variables, clippy::empty_loop)]
+#![allow(incomplete_features, clippy::empty_loop)]
+
+// On many parts of the kernel, I would like to specify the justification for each unsafe fn call, even if it is inside an unsafe fn already
+
+#![allow(unused_unsafe)]
 
 extern crate alloc;
 
@@ -127,6 +133,10 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
     }
 
     cpu::fence_vma();
+    
+    
+    //kernel_debugging::backtrace::backtrace();
+    //kernel_debugging::pub_names::test();
 
     // Initialize the device tree assuming that opaque contains a pointer to the DT
     // (standard behaviour in QEMU)
@@ -248,6 +258,7 @@ fn panic(info: &PanicInfo) -> ! {
     let trap_frame = cpu::read_sscratch();
 
     debug!("{:?}", trap_frame);
+    
 
     // Check if trap frame is out of bounds (which means we can't read data from it)
     if (trap_frame as usize) > 0x80200000
@@ -297,7 +308,7 @@ pub fn status_summary() {
 pub mod allocator;
 pub mod asm;
 pub mod as_register;
-pub mod backtrace;
+pub mod kernel_debugging;
 pub mod context_switch;
 pub mod device_setup;
 pub mod drivers;
@@ -321,4 +332,6 @@ pub mod test_task;
 pub mod timeout;
 pub mod timer_queue;
 pub mod trap;
+pub mod trap_frame;
+pub mod unsafe_buffer;
 pub mod virtual_buffers;

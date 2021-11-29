@@ -26,7 +26,6 @@
 .macro store_to_trap_frame 
 .endm
 
-
 .macro store_volatile_registers
 
 
@@ -251,9 +250,21 @@ do_syscall_internal:
 .global store_to_trap_frame
 
 store_to_trap_frame:
-	csrrw a0, sscratch, a0
-	store_volatile_registers
-	csrrw a0, sscratch, a0
+	csrrw a1, sscratch, a1
+	
+	.set 	i, 0
+	.rept	31
+		save_gp	%i, a0
+		.set	i, i+1
+	.endr
+
+	
+	jal t6, 4
+	addi t6, t6, -4
+	sx t6, XLEN*32(a0)
+	
+	
+	csrrw a1, sscratch, a1
 	ret
 
 .global critical_code_end	

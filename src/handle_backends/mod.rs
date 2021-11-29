@@ -6,6 +6,7 @@ use self::log_output::LogOutputHandleBackend;
 use alloc::sync::Arc;
 
 pub mod log_output;
+pub mod filesystem;
 
 pub static BACKEND_CONSTRUCTORS: RwLock<BTreeMap<usize, fn() -> Arc<dyn HandleBackend + Send + Sync>>> = RwLock::new(BTreeMap::new());
 pub static BACKEND_SINGLETONS: RwLock<BTreeMap<usize, Arc<dyn HandleBackend + Send + Sync>>> = RwLock::new(BTreeMap::new());

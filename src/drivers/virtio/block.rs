@@ -14,10 +14,7 @@ use core::{
 };
 
 use super::{SplitVirtqueue, VirtioDevice, VirtioDeviceType};
-use crate::{
-    interrupt_context_waker::InterruptContextWaker,
-    lock::shared::{Mutex, RwLock},
-};
+use crate::{drivers::traits::block::BlockRequestFutureBuffer, interrupt_context_waker::InterruptContextWaker, lock::shared::{Mutex, RwLock}, unsafe_buffer::{UnsafeSlice, UnsafeSliceMut}};
 
 // See https://docs.oasis-open.org/virtio/virtio/v1.1/cs01/virtio-v1.1-cs01.html#x1-2440004
 // section 5.2.6
@@ -43,15 +40,14 @@ pub struct VirtioBlockDevice {
     // A map between descriptor IDs and Wakers
     waiting_requests: BTreeMap<u16, Vec<Waker>>,
     // A map between descriptor IDs and Buffers
-    header_buffers: BTreeMap<u16, Box<[u8]>>,
+    header_buffers: BTreeMap<u16, BlockRequestFutureBuffer>,
 }
 
 pub struct BlockRequestFuture {
     device: Weak<RwLock<VirtioBlockDevice>>,
     header: RequestHeader,
-    // The buffer is moved out when block operation is being carried out, and then it's moved
-    // back in when it's done (AFTER the future is poll()'d).
-    pub buffer: Option<Box<[u8]>>,
+    
+    pub buffer: Option<BlockRequestFutureBuffer>,
     pub descriptor_id: Option<u16>,
     pub was_queued: bool,
 }
@@ -59,7 +55,7 @@ pub struct BlockRequestFuture {
 use core::task::Poll;
 
 impl Future for BlockRequestFuture {
-    type Output = Option<Box<[u8]>>;
+    type Output = Option<BlockRequestFutureBuffer>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<<Self as Future>::Output> {
         let device = self.device.upgrade().unwrap();
@@ -103,13 +99,15 @@ impl BlockDevice for VirtioBlockDevice {
     fn _create_request(
         &self,
         sector: u64,
-        buffer: Box<[u8]>,
-        write: bool,
+        buffer: BlockRequestFutureBuffer,
     ) -> Box<dyn AnyRequestFuture + Unpin + Send + Sync> {
         Box::new(BlockRequestFuture {
             device: self.this.clone(),
             header: RequestHeader {
-                r#type: if write { 1 } else { 0 },
+                r#type: match buffer {
+                    BlockRequestFutureBuffer::WriteFrom(_) => 1,
+                    BlockRequestFutureBuffer::ReadInto(_) => 0,
+                },
                 reserved: 0,
                 sector,
             },
@@ -132,19 +130,20 @@ impl VirtioBlockDevice {
 
         let mut last = vq_lock.new_descriptor_from_boxed_slice(status, true, None);
 
-        if future.header.r#type == 1 {
-            last = vq_lock.new_descriptor_from_boxed_slice(
-                future.buffer.take().unwrap(),
+        use BlockRequestFutureBuffer::*;
+
+        last = match future.buffer.take().unwrap() {
+            WriteFrom(e) => vq_lock.new_descriptor_from_unsafe_slice(
+                e,
                 false,
                 Some(last),
-            );
-        } else {
-            last = vq_lock.new_descriptor_from_boxed_slice(
-                future.buffer.take().unwrap(),
+            ),
+            ReadInto(e) => vq_lock.new_descriptor_from_unsafe_slice_mut(
+                e,
                 true,
                 Some(last),
-            );
-        }
+            ),
+        };
         //println!("Ptr {:?} {:?}", s.as_ptr() as *mut u8, s.len());
         let slice = unsafe {
             slice::from_raw_parts(
@@ -206,13 +205,13 @@ impl VirtioBlockDevice {
 
             let request_body = &data[core::mem::size_of::<RequestHeader>()..data.len() - 1];
             */
-            // Now, try to recreate the Box<[u8]> that were used to create this
-            // Reconstruct the buffer box
+            
+            // Todo: Reconstruct whether this was a ReadInto or WriteFrom variant
             let mut components = descriptor_chain_data_iterator.map(|s| unsafe {
-                Box::from_raw(core::slice::from_raw_parts_mut(
+                BlockRequestFutureBuffer::WriteFrom(UnsafeSlice::new(core::slice::from_raw_parts_mut(
                     s.as_ptr() as *mut u8,
                     s.len(),
-                ))
+                )))
             });
             let buffer_box = components.nth(1).unwrap();
 
@@ -241,7 +240,7 @@ impl VirtioBlockDevice {
     }
 
     /// Returns None if buffer doesn't exist (which meanst that the request was never done OR that it has completed)
-    pub fn take_buffer(&mut self, descriptor_id: &u16) -> Option<Box<[u8]>> {
+    pub fn take_buffer(&mut self, descriptor_id: &u16) -> Option<BlockRequestFutureBuffer> {
         self.header_buffers.remove(descriptor_id)
     }
     pub fn register_waker(&mut self, descriptor_id: &u16, waker: Waker) {

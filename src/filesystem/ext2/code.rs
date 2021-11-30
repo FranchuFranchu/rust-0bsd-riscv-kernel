@@ -302,18 +302,17 @@ impl Ext2 {
         Ok(())
     }
     pub async fn inode_handle<'this, 'handle>(&'this self, inode: u32) -> Result<InodeHandle<'handle>> where 'this: 'handle {
-        Ok(InodeHandle {
-            fs: self,
-            state: self.inode_handle_state(inode).await?
-        })
+        Ok(InodeHandle::new(
+            self,
+            self.inode_handle_state(inode).await?,
+        ))
     }
     
     pub async fn inode_handle_state(&self, inode: u32) -> Result<InodeHandleState> {
-        Ok(InodeHandleState {
-            inode_number: inode,
-            inode: self.read_inode(inode).await?,
-            position: 0,
-        })
+        Ok(InodeHandleState::new(
+            self.read_inode(inode).await?,
+            inode,
+        ))
     }
 
     pub async fn write_block(&self, block: u32, buffer: &[u8]) -> Result<()> {

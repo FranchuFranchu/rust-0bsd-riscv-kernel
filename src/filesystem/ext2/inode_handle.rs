@@ -14,6 +14,13 @@ pub struct InodeHandle<'a> {
 }
 
 impl InodeHandleState {
+	pub fn new(inode: Inode, inode_number: u32) -> Self {
+		InodeHandleState {
+			inode,
+			inode_number,
+			position: 0,
+		}
+	}
     async fn read(&mut self, fs: &Ext2, buf: &mut [u8]) -> Result<usize> {
         let block_size: usize = fs.block_size() as usize;
 
@@ -84,6 +91,15 @@ impl InodeHandleState {
     }
     pub fn tell(&self) -> usize {
         self.position
+    }
+}
+
+
+impl<'a> InodeHandle<'a> {
+    pub fn new(fs: &'a Ext2, state: InodeHandleState) -> Self {
+    	Self {
+    		fs, state,
+    	}
     }
 }
 

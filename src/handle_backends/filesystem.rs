@@ -8,7 +8,7 @@ use alloc::boxed::Box;
 
 pub struct FilesystemHandleBackend {
 	block_device: Ext2,
-	handle_inodes: BTreeMap<usize, InodeHandleState>,
+	handle_inodes: RwLock<BTreeMap<usize, InodeHandleState>>,
 }
 
 #[async_trait]
@@ -33,7 +33,7 @@ impl<'this> HandleBackend for FilesystemHandleBackend {
         };
 	    alloc::sync::Arc::new(Self { 
 	    	block_device: Ext2::new(&block_device),
-	    	handle_inodes: BTreeMap::new()
+	    	handle_inodes: RwLock::new(BTreeMap::new())
 	    })
 	}
 	
@@ -47,7 +47,7 @@ impl<'this> HandleBackend for FilesystemHandleBackend {
 		
 		let h = self.block_device.inode_handle_state(self.block_device.get_path(filename).await.unwrap().unwrap()).await.unwrap();
 		
-		self.handle_inodes.insert(*fd_id, h);
+		self.handle_inodes.write().insert(*fd_id, h);
 	}
 	
 	fn name(&self) -> &'static str { 

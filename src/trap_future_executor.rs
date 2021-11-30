@@ -3,6 +3,7 @@ use core::pin::Pin;
 use core::task::Context;
 use core::hint::unreachable_unchecked;
 use core::task::Poll;
+use core::task::Waker;
 use alloc::{sync::Arc, task::Wake};
 use alloc::boxed::Box;
 
@@ -23,8 +24,8 @@ impl Wake for TrapFutureWaker {
 //
 /// You should include all code that passes whatever return value the future has to userspace in the future itself
 fn block_until_never<F>(future: Pin<&mut F>) -> ! where F: Future<Output=(!)> {
-	let w = Arc::new(TrapFutureWaker{});
-	let ctx = Context::from_waker(&w.into());
+	let w: Waker = Arc::new(TrapFutureWaker{}).into();
+	let mut ctx = Context::from_waker(&w);
 	if let Poll::Ready(never) = future.poll(&mut ctx) {
 		// Safety: The ! type is never constructed so we can't reach this
 		unsafe { unreachable_unchecked() }
@@ -41,7 +42,7 @@ pub fn block_and_return_to_userspace<F>(process: usize, future: Pin<&mut F>) -> 
 		// Whatever task we had to do is done, return to userspace now
 		context_switch(&process);
 	};
-	let f = Box::pin(block);
+	let mut f = Box::pin(block);
 	let f = Pin::new(&mut f);
 	block_until_never(f)
 }

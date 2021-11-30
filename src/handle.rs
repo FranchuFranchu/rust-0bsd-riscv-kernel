@@ -1,35 +1,37 @@
 use core::num::NonZeroUsize;
 use core::fmt::Debug;
 use alloc::sync::Weak;
+use alloc::boxed::Box;
 
 #[repr(usize)]
 pub enum StandardHandleErrors {
     Unimplemented = 1,
 }
 
+#[async_trait]
 pub trait HandleBackend {
-    fn create_singleton() -> alloc::sync::Arc<dyn HandleBackend + Send + Sync> where Self: Sized;
+    fn create_singleton() -> alloc::sync::Arc<dyn HandleBackend + Send + Sync + 'static> where Self: Sized;
     
-    fn open(&self, id: &usize, options: &[usize]);
+    async fn open(&self, id: &usize, options: &[usize]);
     
     fn name(&self) -> &'static str;
     
-    fn read(&self, id: &usize, buf: &mut [u8]) -> Result<usize, usize> {
+    async fn read(&self, id: &usize, buf: &mut [u8], options: &[usize]) -> Result<usize, usize> {
         Err(StandardHandleErrors::Unimplemented as usize)
     }
-    fn write(&self, id: &usize, buf: &[u8]) -> Result<usize, usize> {
+    async fn write(&self, id: &usize, buf: &[u8], options: &[usize]) -> Result<usize, usize> {
         Err(StandardHandleErrors::Unimplemented as usize)
     }
-    fn size_hint(&self, id: &usize) -> (usize, Option<usize>) {
+    async fn size_hint(&self, id: &usize, options: &[usize]) -> (usize, Option<usize>) {
         (0, None)
     }
-    fn seek(&self, id: &usize, position: &usize) -> Result<(), usize> {
+    async fn seek(&self, id: &usize, position: &usize, options: &[usize]) -> Result<(), usize> {
         Err(StandardHandleErrors::Unimplemented as usize)
     }
-    fn tell(&self, id: &usize) -> Result<usize, usize> {
+    async fn tell(&self, id: &usize, options: &[usize]) -> Result<usize, usize> {
         Err(StandardHandleErrors::Unimplemented as usize)
     }
-    fn split(&self, id: &usize) -> Option<NonZeroUsize> {
+    async fn split(&self, id: &usize, options: &[usize]) -> Option<NonZeroUsize> {
         None
     }
 }

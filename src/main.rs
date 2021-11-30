@@ -21,7 +21,8 @@
     int_roundings,
     type_ascription,
     map_first_last,
-    global_asm
+    global_asm,
+    never_type,
 )]
 #![cfg_attr(not(test), no_std)]
 #![no_main]
@@ -326,6 +327,7 @@ pub mod paging;
 pub mod plic;
 pub mod process;
 pub mod sbi;
+pub mod trap_future_executor;
 pub mod scheduler;
 pub mod syscall;
 pub mod test_task;

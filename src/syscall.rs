@@ -1,8 +1,9 @@
 use core::slice;
 
+use gimli::Register;
 use num_enum::{FromPrimitive, IntoPrimitive};
 
-use crate::{context_switch, cpu::{Registers, read_satp, write_satp}, paging::{EntryBits, Paging}, process::{self}, test_task::boxed_slice_with_alignment, trap::TrapFrame};
+use crate::{context_switch, cpu::{Registers, read_satp, write_satp}, paging::{EntryBits, Paging}, process::{self}, test_task::boxed_slice_with_alignment, trap::TrapFrame, trap_future_executor::block_and_return_to_userspace};
 
 #[repr(usize)]
 #[derive(IntoPrimitive, FromPrimitive, Debug)]
@@ -85,13 +86,13 @@ pub fn do_syscall(frame: *mut TrapFrame) {
             use crate::handle::Handle;
             
             let id = frame.general_registers[Registers::A0.idx()];
-            let options = [];
+            let options = &frame.general_registers[Registers::A1.idx()..Registers::A7.idx()+1];
             
             let p = crate::process::try_get_process(&frame.pid);
             let mut process_lock = p.write();
             let new_fd_number = process_lock.handles.last_key_value().map(|s| s.0 + 1).unwrap_or(1);
             
-            let backend_instance = crate::handle_backends::open(&id, &new_fd_number, &options);
+            let backend_instance = crate::handle_backends::open(&id, &new_fd_number, options);
             core::mem::forget(backend_instance.clone());
             process_lock.handles.insert(new_fd_number, Handle {
                 fd_id: new_fd_number,
@@ -102,20 +103,24 @@ pub fn do_syscall(frame: *mut TrapFrame) {
         }
         
         Write => {
-            let id = frame.general_registers[Registers::A0.idx()];
+            let fut = async {
+                let id = frame.general_registers[Registers::A0.idx()];
+                
+                let old_satp = read_satp();
+                unsafe { write_satp(frame.satp) };
+                
+                // TODO make safe
+                let s = unsafe { slice::from_raw_parts(frame.general_registers[Registers::A1.idx()] as *const u8, frame.general_registers[Registers::A2.idx()]) };
+                let options = &frame.general_registers[Registers::A3.idx()..Registers::A7.idx()+1];
+                
+                let p = crate::process::try_get_process(&frame.pid);
+                let process_lock = p.write();
+                process_lock.handles[&id].backend.upgrade().as_ref().unwrap().write(&id, s, options);
+                unsafe { write_satp(old_satp) };
+            };
+            block_and_return_to_userspace(frame.pid, core::pin::Pin::new(&mut alloc::boxed::Box::pin(fut)));
             
-            let old_satp = read_satp();
-            unsafe { write_satp(frame.satp) };
             
-            // TODO make safe
-            let s = unsafe { slice::from_raw_parts(frame.general_registers[Registers::A1.idx()] as *const u8, frame.general_registers[Registers::A2.idx()]) };
-            
-            let p = crate::process::try_get_process(&frame.pid);
-            let process_lock = p.write();
-            
-            process_lock.handles[&id].backend.upgrade().as_ref().unwrap().write(&id, s).unwrap();
-            
-            unsafe { write_satp(old_satp) };
         }
         
         Unknown => {

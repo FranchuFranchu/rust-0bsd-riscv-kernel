@@ -1,14 +1,19 @@
 use alloc::sync::Arc;
 
+use crate::filesystem::ext2::{Ext2, InodeHandleState};
 use crate::{drivers::virtio::VirtioDriver, external_interrupt::ExternalInterruptHandler, fdt, handle::HandleBackend, lock::shared::RwLock};
 use crate::drivers::traits::block::GenericBlockDevice;
+use alloc::collections::BTreeMap;
+use alloc::boxed::Box;
 
 pub struct FilesystemHandleBackend {
-	block_device: Arc<RwLock<dyn GenericBlockDevice + Send + Sync + Unpin>>,
+	block_device: Ext2,
+	handle_inodes: BTreeMap<usize, InodeHandleState>,
 }
 
-impl HandleBackend for FilesystemHandleBackend {
-	fn create_singleton() -> alloc::sync::Arc<dyn HandleBackend + Send + Sync>
+#[async_trait]
+impl<'this> HandleBackend for FilesystemHandleBackend {
+	fn create_singleton() -> alloc::sync::Arc<dyn HandleBackend + Send + Sync + 'static>
 	where Self: Sized {
         let block_device: Arc<RwLock<dyn GenericBlockDevice + Send + Sync + Unpin>> = {
             let guard = fdt::root().read();
@@ -26,17 +31,30 @@ impl HandleBackend for FilesystemHandleBackend {
             };
             block_device.clone()
         };
-	    alloc::sync::Arc::new(Self { block_device })
+	    alloc::sync::Arc::new(Self { 
+	    	block_device: Ext2::new(&block_device),
+	    	handle_inodes: BTreeMap::new()
+	    })
 	}
 	
-	fn open(&self, fd_id: &usize, options: &[usize]) {
+	async fn open(&self, fd_id: &usize, options: &[usize]) {
+		// a1 (Option #0) = start of filename
+		// a2 (Option #1) = length of filename
+		let filename = unsafe { core::slice::from_raw_parts(options[0] as *const u8, options[1]) };
+		let filename = core::str::from_utf8(filename).unwrap();
+		
+		info!("Opening file: {:?}", filename);
+		
+		let h = self.block_device.inode_handle_state(self.block_device.get_path(filename).await.unwrap().unwrap()).await.unwrap();
+		
+		self.handle_inodes.insert(*fd_id, h);
 	}
 	
 	fn name(&self) -> &'static str { 
 		"LogOutputHandleBackend"
 	}
 	
-	fn write(&self, fd_id: &usize, buf: &[u8]) -> Result<usize, usize> {
+	async fn write(&self, fd_id: &usize, buf: &[u8], options: &[usize]) -> Result<usize, usize> {
 		Ok(0)
 	}
 }

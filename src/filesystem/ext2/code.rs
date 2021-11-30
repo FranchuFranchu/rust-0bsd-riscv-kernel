@@ -3,6 +3,7 @@ use core::ops::{Add, Div, Sub};
 
 use kernel_io::{Read, Write};
 
+use super::inode_handle::{InodeHandle, InodeHandleState};
 use super::structures::{
     BlockGroupDescriptor, DirectoryEntry, Inode, OwnedDirectoryEntry, Superblock,
 };
@@ -300,11 +301,17 @@ impl Ext2 {
         self.write_block(self.get_inode_block(inode, block).await?, source_buffer).await?;
         Ok(())
     }
-    pub async fn inode_handle<'this>(&'this self, inode: u32) -> Result<InodeHandle<'this>> {
+    pub async fn inode_handle<'this, 'handle>(&'this self, inode: u32) -> Result<InodeHandle<'handle>> where 'this: 'handle {
         Ok(InodeHandle {
+            fs: self,
+            state: self.inode_handle_state(inode).await?
+        })
+    }
+    
+    pub async fn inode_handle_state(&self, inode: u32) -> Result<InodeHandleState> {
+        Ok(InodeHandleState {
             inode_number: inode,
             inode: self.read_inode(inode).await?,
-            fs: self,
             position: 0,
         })
     }
@@ -447,98 +454,5 @@ impl Ext2 {
             }
         }
         Ok(())
-    }
-}
-
-pub struct InodeHandle<'a> {
-    fs: &'a Ext2,
-    inode: Inode,
-    inode_number: u32,
-    position: usize,
-}
-
-#[async_trait]
-impl<'a> Read for InodeHandle<'a> {
-    type Error = Ext2Error;
-    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        let block_size: usize = self.fs.block_size() as usize;
-
-        let mut position_in_buffer = 0;
-
-        while position_in_buffer < buf.len() && self.position < self.inode.size as usize {
-            use core::convert::TryInto;
-            let current_block: u32 = (self.position / block_size).try_into().unwrap();
-            let current_block_offset = self.position % block_size;
-            let read_in_block_up_to = (block_size)
-                .min(self.inode.size as usize)
-                .min(buf.len() - position_in_buffer + current_block_offset);
-
-            let block = self
-                .fs
-                .read_inode_block_cache(&self.inode, current_block)
-                .await?;
-            let source_buffer = &block[current_block_offset..read_in_block_up_to];
-
-            buf[position_in_buffer..position_in_buffer + source_buffer.len()]
-                .copy_from_slice(source_buffer);
-            self.position += source_buffer.len();
-            position_in_buffer += source_buffer.len();
-        }
-        Ok(position_in_buffer)
-    }
-}
-
-
-#[async_trait]
-impl<'a> Write for InodeHandle<'a> {
-    type Error = Ext2Error;
-    async fn write(&mut self, source_buffer: &[u8]) -> Result<usize> {
-        let block_size: usize = self.fs.block_size() as usize;
-        self.fs.truncate_inode(&mut self.inode, (self.position + source_buffer.len()) as u32).await?;
-        let mut position_in_buffer = 0;
-
-        while position_in_buffer < source_buffer.len() && self.position < self.inode.size as usize {
-            use core::convert::TryInto;
-            let current_block: u32 = (self.position / block_size).try_into().unwrap();
-            let current_block_offset = self.position % block_size;
-            let read_in_block_up_to = (block_size)
-                .min(self.inode.size as usize)
-                .min(source_buffer.len() - position_in_buffer + current_block_offset);
-                
-            println!("{:?}", read_in_block_up_to);
-
-            let mut block = self
-                .fs
-                .read_inode_block_cache(&self.inode, current_block)
-                .await?;
-            let destination_buffer = &mut block[current_block_offset..read_in_block_up_to];
-            
-            println!("Bufs {:?} {:?}", destination_buffer, source_buffer);
-
-            destination_buffer[position_in_buffer..position_in_buffer + source_buffer.len()].copy_from_slice(source_buffer);
-            self.position += destination_buffer.len();
-            position_in_buffer += destination_buffer.len();
-            drop(destination_buffer);
-            self.fs.write_inode_block_cache(&self.inode, current_block, &block).await?;
-            
-        };
-        
-        println!("{:?}", self.inode);
-        self.fs.write_inode(self.inode_number, &self.inode).await?;
-        
-        
-        Ok(position_in_buffer)
-    }
-}
-
-impl<'a> InodeHandle<'a> {
-    pub fn will_read_all(&mut self, length: usize) -> bool {
-        (self.position + length) <= (self.inode.size as usize)
-    }
-    pub fn seek(&mut self, position: usize) {
-        self.position = position;
-    }
-    pub fn tell(&self) -> usize {
-        self.position
     }
 }

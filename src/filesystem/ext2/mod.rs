@@ -1,6 +1,6 @@
 pub mod code;
-pub mod structures;
 pub mod inode_handle;
+pub mod structures;
 
-pub use code::{Ext2, Result, Ext2Error};
-pub use inode_handle::{InodeHandleState, InodeHandle};
+pub use code::{Ext2, Ext2Error, Result};
+pub use inode_handle::{InodeHandle, InodeHandleState};

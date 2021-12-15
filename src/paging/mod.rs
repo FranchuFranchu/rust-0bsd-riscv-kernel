@@ -1,8 +1,9 @@
 //! Abstractions over supervisor-mode paging
 
-use core::ops::{Index, IndexMut};
-use core::fmt::Debug;
-
+use core::{
+    fmt::Debug,
+    ops::{Index, IndexMut},
+};
 
 pub mod sv32;
 #[cfg(target_arch = "riscv64")]
@@ -86,7 +87,9 @@ impl Entry {
     }
 
     pub fn is_leaf(&self) -> bool {
-        (self.value & EntryBits::RWX) != 0 || (self.value & EntryBits::VALID == 0) || (self.value & EntryBits::ADDRESS_MASK) == 0
+        (self.value & EntryBits::RWX) != 0
+            || (self.value & EntryBits::VALID == 0)
+            || (self.value & EntryBits::ADDRESS_MASK) == 0
     }
     /// This takes a leaf entry and turns it into a reference to a page table with the same effect.
     /// Increment should be one of the PAGE_SIZE, MEGAPAGE_SIZE, GIGAPAGE_SIZE, etc constants
@@ -97,10 +100,8 @@ impl Entry {
 
         let mut table = Box::new(Table::zeroed());
         let mut current_address = self.value & EntryBits::ADDRESS_MASK;
-        
-        
+
         let flags = self.value & !(EntryBits::ADDRESS_MASK);
-        
 
         for entry in table.entries.iter_mut() {
             entry.value = flags | current_address;
@@ -117,29 +118,32 @@ impl Entry {
 
 impl Debug for Entry {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        use EntryBits::*;
         use core::fmt::Write;
+
+        use EntryBits::*;
         f.write_str("<Entry: ")?;
         if self.value & VALID == 0 {
             f.write_fmt(format_args!("Invalid entry: {:x}", self.value))?;
         } else if self.value & RWX == 0 {
-            f.write_fmt(format_args!("Table to: {:x}", (self.value & ADDRESS_MASK) << 2))?;
+            f.write_fmt(format_args!(
+                "Table to: {:x}",
+                (self.value & ADDRESS_MASK) << 2
+            ))?;
         } else {
             if self.value & READ != 0 {
                 f.write_char('R')?;
             }
-            if self.value & WRITE  != 0 {
+            if self.value & WRITE != 0 {
                 f.write_char('W')?;
             }
-            if self.value & EXECUTE  != 0 {
+            if self.value & EXECUTE != 0 {
                 f.write_char('X')?;
             }
-            if self.value & USER  != 0 {
+            if self.value & USER != 0 {
                 f.write_char('U')?;
             }
             f.write_char(' ')?;
             f.write_fmt(format_args!("{:x}", (self.value & ADDRESS_MASK) << 2));
-            
         }
         f.write_char('>')?;
         Ok(())
@@ -175,7 +179,6 @@ impl IndexMut<usize> for Table {
 }
 
 pub trait Paging {
-    
     fn map(&mut self, physical_addr: usize, virtual_addr: usize, length: usize, flags: usize);
     fn identity_map(&mut self);
 }
@@ -191,12 +194,44 @@ extern "C" {
 
 /// Map the trap and switch to user/supervisor frame functions, which are the ones that change SATP to change contexts
 pub fn map_critical_kernel_address_space(table: &mut impl Paging, trap_frame: usize) {
-    
-    let start = unsafe { &critical_code_start as *const c_void as usize }.unstable_div_floor(4096) * 4096;
-    
-    let end = unsafe { &critical_code_end as *const c_void as usize }.unstable_div_ceil(4096) * 4096;
-    table.map(start, start, end - start, EntryBits::VALID | EntryBits::READ | EntryBits::EXECUTE);
-    table.map(trap_frame, trap_frame, 4096, EntryBits::VALID | EntryBits::READ | EntryBits::WRITE);
+    let start =
+        unsafe { &critical_code_start as *const c_void as usize }.unstable_div_floor(4096) * 4096;
+
+    let end =
+        unsafe { &critical_code_end as *const c_void as usize }.unstable_div_ceil(4096) * 4096;
+    table.map(
+        start,
+        start,
+        end - start,
+        EntryBits::VALID | EntryBits::READ | EntryBits::EXECUTE,
+    );
+    table.map(
+        trap_frame,
+        trap_frame,
+        4096,
+        EntryBits::VALID | EntryBits::READ | EntryBits::WRITE,
+    );
+}
+
+use alloc::boxed::Box;
+
+use crate::cpu::csr::{SATP_BARE, SATP_SV32};
+
+pub trait PagingDebug: Paging + Debug {}
+pub fn get_active_root_table(satp: usize) -> Option<Box<dyn PagingDebug>> {
+    let paging_type = (satp >> 60) << 60;
+    let table_addr = (satp & ((1 << 60) - 1)) << 12;
+    println!("{:x}", table_addr);
+    println!("{:x}", paging_type);
+    match paging_type {
+        SATP_BARE => None,
+        SATP_SV39 => unsafe {
+            Some(Box::new(sv39::RootTable(
+                (table_addr as *mut Table).as_mut().unwrap(),
+            )))
+        },
+        _ => todo!(),
+    }
 }
 
 pub static mut PAGE_TABLE_TABLE: Table = Table::zeroed();

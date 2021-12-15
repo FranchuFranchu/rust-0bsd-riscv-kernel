@@ -1,17 +1,18 @@
-use core::task::Waker;
-use core::ops::{Deref, DerefMut};
-use core::cell::UnsafeCell;
-use core::future::Future;
-
 use alloc::vec::Vec;
+use core::{
+    cell::UnsafeCell,
+    future::Future,
+    ops::{Deref, DerefMut},
+    pin::Pin,
+    task::{Context, Poll, Waker},
+};
+
 use lock_api::RawMutex;
-use core::task::{Poll, Context};
-use core::pin::Pin;
 
 use crate::lock::spin::mutex::RawSpinlock;
 
 pub struct MutexLockFuture<'mutex, T> {
-    mutex: &'mutex AsyncMutex<T>
+    mutex: &'mutex AsyncMutex<T>,
 }
 
 struct RawAsyncMutex {
@@ -21,7 +22,7 @@ struct RawAsyncMutex {
 
 pub struct AsyncMutex<T> {
     lock: RawAsyncMutex,
-    value: UnsafeCell<T>
+    value: UnsafeCell<T>,
 }
 
 impl RawAsyncMutex {
@@ -58,7 +59,7 @@ impl<T> AsyncMutex<T> {
     pub fn lock<'mutex>(&'mutex self) -> MutexLockFuture<'mutex, T> {
         MutexLockFuture { mutex: self }
     }
-    
+
     unsafe fn force_unlock(&self) {
         self.lock.locked.unlock();
         let waker = self.lock.wakers.lock().remove(0);
@@ -67,7 +68,7 @@ impl<T> AsyncMutex<T> {
 }
 
 pub struct AsyncMutexGuard<'mutex, T> {
-    mutex: &'mutex AsyncMutex<T>
+    mutex: &'mutex AsyncMutex<T>,
 }
 
 impl<'mutex, T> Deref for AsyncMutexGuard<'mutex, T> {

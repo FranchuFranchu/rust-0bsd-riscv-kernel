@@ -178,6 +178,12 @@ switch_to_supervisor_frame:
 	li t0, 0x222
 	csrw sie, t0
 	
+	// Set SPP, which will make it so that when SRET is executed, we are in user mode
+	csrr t0, sstatus
+	li t1, (1 << 8)
+	or t0, t1, t0
+	csrw sstatus, t0
+	
 	restore_volatile_registers
 	sret
 

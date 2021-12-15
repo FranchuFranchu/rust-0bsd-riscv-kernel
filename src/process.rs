@@ -14,7 +14,16 @@ use core::{
     task::{RawWaker, RawWakerVTable, Waker},
 };
 
-use crate::{asm::do_supervisor_syscall_0, context_switch, cpu::{self, load_hartid, read_sscratch, Registers}, handle::Handle, lock::shared::RwLock, scheduler::schedule_next_slice, test_task::boxed_slice_with_alignment, trap::{in_interrupt_context, use_boot_frame_if_necessary, TrapFrame}};
+use crate::{
+    asm::do_supervisor_syscall_0,
+    context_switch,
+    cpu::{self, load_hartid, read_sscratch, Registers},
+    handle::Handle,
+    lock::shared::RwLock,
+    scheduler::schedule_next_slice,
+    test_task::boxed_slice_with_alignment,
+    trap::{in_interrupt_context, use_boot_frame_if_necessary, TrapFrame},
+};
 
 pub const TASK_STACK_SIZE: usize = 4096 * 8;
 pub const PROCESS_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
@@ -23,9 +32,34 @@ pub const PROCESS_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
     /* wake_by_ref */ Process::waker_wake_by_ref,
     /* drop */ Process::waker_drop,
 );
-pub static PROCESSES: RwLock<BTreeMap<usize, Arc<RwLock<Process>>>> = RwLock::new(BTreeMap::new());
+pub static PROCESSES: RwLock<BTreeMap<usize, PidSlot>> = RwLock::new(BTreeMap::new());
 pub static PROCESS_SCHED_QUEUE: RwLock<Vec<Weak<RwLock<Process>>>> = RwLock::new(Vec::new());
 
+pub enum PidSlot {
+    Allocated,
+    Used(Arc<RwLock<Process>>),
+}
+
+impl PidSlot {
+    pub fn unwrap_ref(&self) -> Option<&Arc<RwLock<Process>>> {
+        match self {
+            PidSlot::Allocated => None,
+            PidSlot::Used(p) => Some(p),
+        }
+    }
+    pub fn unwrap_mut(&mut self) -> Option<&mut Arc<RwLock<Process>>> {
+        match self {
+            PidSlot::Allocated => None,
+            PidSlot::Used(p) => Some(p),
+        }
+    }
+    pub fn is_used(&self) -> bool {
+        match self {
+            PidSlot::Allocated => false,
+            PidSlot::Used(_) => true,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum ProcessState {
@@ -82,6 +116,9 @@ impl Process {
     // Uses this hart to execute this process until the next context switch happens
     // This function essentially never returns because it runs until an interrupt happens
     pub fn run_once(&mut self) -> ! {
+        if self.trap_frame.pc > 0x8000000 as usize && !self.is_supervisor {
+            panic!("{:?}", "user process aren't really meant to do this");
+        }
         // The hart ID that we will be executing in is the same one as the current one.
         self.trap_frame.hartid = load_hartid();
 
@@ -163,7 +200,7 @@ impl Process {
         // Re-create the box for this waker and then drop it to prevent memory leaks
         drop(Box::from_raw(data as *mut Weak<RwLock<Self>>));
     }
-    
+
     /// This process makes this process pending if it's yielded
     ///
     /// If it isn't, then it will "queue up" the wake-up signal to the process so that it can be "consumed" the next time the process should yield
@@ -181,7 +218,7 @@ impl Process {
 
     /// This creates a Waker that makes this process a Pending process when woken
     ///
-    /// The Pending process will be eventually scheduled 
+    /// The Pending process will be eventually scheduled
     pub fn construct_waker(&self) -> Waker {
         // Create a weak pointer to a RwLock<Self> and then erase its type
         let raw_pointer =
@@ -261,20 +298,14 @@ pub fn finish_executing_process(pid: usize) {
 
 /// Finds an unused PID
 pub fn allocate_pid() -> usize {
-    let mut pid = 2;
-    for this_pid in pid.. {
-        if !PROCESSES.read().contains_key(&this_pid) {
-            pid = this_pid;
-            break;
-        }
-    }
-    pid
+    allocate_pid_lockfree(&mut PROCESSES.write())
 }
 
-pub fn allocate_pid_lockfree(processes: &BTreeMap<usize, Arc<RwLock<Process>>>) -> usize {
+pub fn allocate_pid_lockfree(processes: &mut BTreeMap<usize, PidSlot>) -> usize {
     let mut pid = 2;
     for this_pid in pid.. {
         if !processes.contains_key(&this_pid) {
+            processes.insert(this_pid, PidSlot::Allocated);
             pid = this_pid;
             break;
         }
@@ -283,12 +314,16 @@ pub fn allocate_pid_lockfree(processes: &BTreeMap<usize, Arc<RwLock<Process>>>) 
 }
 
 /// Creates a supervisor process and returns PID
-/// SAFETY: Only when function is a valid function pointer (with)
-pub fn new_process_int(function: usize, a0: usize, mut constructor: impl FnMut(&mut Process)) -> usize {
+/// SAFETY: Only when function is a valid function pointer
+pub fn new_process_int(
+    function: usize,
+    a0: usize,
+    mut constructor: impl FnMut(&mut Process),
+) -> usize {
     // Hold this guard for as much time as possible
     // to prevent a race condition on allocate_pid
     let mut guard = PROCESSES.write();
-    let pid = allocate_pid_lockfree(&*guard);
+    let pid = allocate_pid_lockfree(&mut *guard);
 
     let trapframe_box = Box::new(TrapFrame::zeroed());
     let trapframe_box = Pin::new(trapframe_box);
@@ -319,7 +354,7 @@ pub fn new_process_int(function: usize, a0: usize, mut constructor: impl FnMut(&
     // Schedule the process
     PROCESS_SCHED_QUEUE.write().push(Arc::downgrade(&process));
 
-    guard.insert(pid, process);
+    guard.insert(pid, PidSlot::Used(process));
 
     pid
 }
@@ -328,11 +363,11 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
     new_process_int(function, a0, |process| {
         process.is_supervisor = true;
         process.trap_frame.general_registers[Registers::Ra.idx()] =
-        process_return_address_supervisor as usize;
-            
-            
+            process_return_address_supervisor as usize;
+
         let process_stack = boxed_slice_with_alignment(4096, 4096, &0u8);
-        process.trap_frame.interrupt_stack = process_stack.as_ptr() as usize + TASK_STACK_SIZE - 0x10;
+        process.trap_frame.interrupt_stack =
+            process_stack.as_ptr() as usize + TASK_STACK_SIZE - 0x10;
 
         Box::leak(process_stack);
 
@@ -346,7 +381,6 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
                 .try_into()
                 .expect("Process stack has incorrect length!"),
         );
-
     })
 }
 
@@ -396,14 +430,26 @@ pub fn weak_get_process(pid: &usize) -> Weak<RwLock<Process>> {
     PROCESSES
         .read()
         .get(pid)
-        .map(Arc::downgrade)
+        .map(|slot| {
+            use PidSlot::*;
+            match slot {
+                Allocated => Weak::new(),
+                Used(p) => Arc::downgrade(p),
+            }
+        })
         .unwrap_or_default()
 }
 
 // This assumes that the process exists and panics if it doesn't
 // Also acts as a strong reference to the process
 pub fn try_get_process(pid: &usize) -> Arc<RwLock<Process>> {
-    PROCESSES.read().get(pid).unwrap().clone()
+    PROCESSES
+        .read()
+        .get(pid)
+        .unwrap()
+        .unwrap_ref()
+        .unwrap()
+        .clone()
 }
 
 /// Gets the amount of processes that aren't idle processes and are still alive
@@ -413,12 +459,13 @@ pub fn useful_process_count() -> usize {
     PROCESSES
         .read()
         .iter()
+        .filter_map(|(k, v)| Some((k, PidSlot::unwrap_ref(v)?)))
         .filter(|(k, v)| {
             v.read()
                 .name
                 .as_ref()
                 .map(|s| !s.starts_with("Idle "))
-                .unwrap_or(false)
+                .unwrap_or(true)
         })
         .count()
 }
@@ -444,9 +491,7 @@ pub fn idle() -> ! {
 
         if let Some(process) = this_process {
             let mut process = process.write();
-            info!("F {:?}", read_sscratch());
             crate::trap::use_boot_frame_if_necessary(&*process.trap_frame as _);
-            info!("F {:?}", read_sscratch());
             process.state = ProcessState::Pending;
         }
         new_supervisor_process_with_name(
@@ -454,6 +499,7 @@ pub fn idle() -> ! {
             format!("Idle process for hart {}", load_hartid()),
         )
     };
+    assert!(try_get_process(&pid).read().is_supervisor == true);
     schedule_next_slice(1);
     context_switch::context_switch(&pid)
 }

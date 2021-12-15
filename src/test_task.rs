@@ -1,20 +1,25 @@
 //! The functions here are testing tasks that can be run to make sure that other complex kernel tasks
 //! won't crash
 
-
-use alloc::{collections::BTreeSet, vec::Vec};
-use kernel_io::Write;
+use alloc::{alloc::Layout, collections::BTreeSet, vec::Vec};
 use core::{
+    mem::{size_of, MaybeUninit},
     ops::{BitAnd, BitXor},
     pin::Pin,
     task::Context,
 };
 
-use core::mem::size_of;
-use core::mem::MaybeUninit;
-use alloc::alloc::Layout;
+use kernel_io::Write;
 
-use crate::{asm::do_supervisor_syscall_0, cpu::{self, Registers}, drivers::{traits::block::GenericBlockDevice, virtio::VirtioDriver}, external_interrupt::ExternalInterruptHandler, fdt, paging::{EntryBits, Paging}, process};
+use crate::{
+    asm::do_supervisor_syscall_0,
+    cpu::{self, Registers},
+    drivers::{traits::block::GenericBlockDevice, virtio::VirtioDriver},
+    external_interrupt::ExternalInterruptHandler,
+    fdt,
+    paging::{EntryBits, Paging},
+    process,
+};
 
 // random-ish function I just made up
 fn twist(value: &mut usize) -> usize {
@@ -34,15 +39,19 @@ fn twist(value: &mut usize) -> usize {
     *value
 }
 
-pub fn boxed_slice_with_alignment<T: Clone>(size: usize, align: usize, initialize: &T) -> alloc::boxed::Box<[T]> {
-    unsafe { 
-        let ptr: *mut MaybeUninit<T> = alloc::alloc::alloc(Layout::from_size_align(size * size_of::<T>(), align).unwrap()) as *mut MaybeUninit<T>;
+pub fn boxed_slice_with_alignment<T: Clone>(
+    size: usize,
+    align: usize,
+    initialize: &T,
+) -> alloc::boxed::Box<[T]> {
+    unsafe {
+        let ptr: *mut MaybeUninit<T> =
+            alloc::alloc::alloc(Layout::from_size_align(size * size_of::<T>(), align).unwrap())
+                as *mut MaybeUninit<T>;
         for i in 0..size {
             *ptr.add(i) = MaybeUninit::new(initialize.clone())
         }
         alloc::boxed::Box::from_raw(core::slice::from_raw_parts_mut(ptr as *mut T, size))
-        
-        
     }
 }
 
@@ -190,26 +199,26 @@ pub fn test_task_3() {
         ext2.load_superblock().await.unwrap();
 
         info!("{:?}", ext2.read_inode(2).await.unwrap());
-        
-        
+
         let inode = ext2.get_path("/writeable-file.txt").await.unwrap().unwrap();
-        println!("INODE {:?} {:?}", inode, ext2.read_inode(inode).await.unwrap());
+        println!(
+            "INODE {:?} {:?}",
+            inode,
+            ext2.read_inode(inode).await.unwrap()
+        );
         let mut handle = ext2.inode_handle(inode).await.unwrap();
         handle.write("Jello warla".as_bytes()).await.unwrap();
-        
-        return;
+
         let inode = ext2.get_path("/main").await.unwrap().unwrap();
         let mut handle = ext2.inode_handle(inode).await.unwrap();
         use kernel_io::Read;
         let t = handle.read_to_end_new().await.unwrap();
         let mut new_page_table = Box::new(crate::paging::Table::zeroed());
-        
-        
-        
+
         let mut root_table = crate::paging::sv39::RootTable(&mut new_page_table);
-        
+
         root_table.identity_map();
-        
+
         let elf_file = elf_rs::Elf::from_bytes(&t.1);
         let mut allocated_segments = Vec::new();
         if let elf_rs::Elf::Elf64(e) = elf_file.unwrap() {
@@ -220,17 +229,29 @@ pub fn test_task_3() {
                 let mut segment = boxed_slice_with_alignment(p.ph.memsz() as usize, 4096, &0u8);
                 info!("{:x} {:x}", p.ph.vaddr(), p.ph.vaddr() + p.ph.memsz());
                 // Copy segment to buffer
-                segment.copy_from_slice(p.segment());
+                segment[..p.segment().len()].copy_from_slice(p.segment());
                 //root_table.map(&segment[0] as *const u8 as usize, p.ph.vaddr() as usize, (p.ph.memsz() as usize).max(4096), EntryBits::EXECUTE | EntryBits::VALID | EntryBits::READ);
-                root_table.map(&segment[0] as *const u8 as usize, p.ph.vaddr() as usize, (p.ph.memsz() as usize).max(4096), 
-                    if p.ph.flags() & 1 != 0 { EntryBits::EXECUTE} else { 0 } 
-                    | if p.ph.flags() & 2 != 0 { EntryBits::WRITE} else { 0 } 
-                    | if p.ph.flags() & 4 != 0 { EntryBits::READ} else { 0 } 
-                    | EntryBits::VALID |  EntryBits::USER
+                root_table.map(
+                    &segment[0] as *const u8 as usize,
+                    p.ph.vaddr() as usize,
+                    (p.ph.memsz() as usize).max(4096),
+                    if p.ph.flags() & 1 != 0 {
+                        EntryBits::EXECUTE
+                    } else {
+                        0
+                    } | if p.ph.flags() & 2 != 0 {
+                        EntryBits::WRITE
+                    } else {
+                        0
+                    } | if p.ph.flags() & 4 != 0 {
+                        EntryBits::READ
+                    } else {
+                        0
+                    } | EntryBits::VALID
+                        | EntryBits::USER,
                 );
                 allocated_segments.push(segment);
             }
-            
 
             for s in e.section_header_iter() {
                 //println!("{:x?}", s);
@@ -238,25 +259,31 @@ pub fn test_task_3() {
 
             let s = e.lookup_section(".text");
             //println!("s {:?}", s);
-            
-            println!("{:?}", allocated_segments);
-            
-            unsafe { println!("{:x}", root_table.0.entries[0].as_table_mut()[0].as_table_mut()[32].value); }
+
+            //println!("{:?}", allocated_segments);
+
             process::new_process_int(e.header().entry_point() as usize, 0, |process| {
                 //crate::paging::map_critical_kernel_address_space(&mut root_table, &*process.trap_frame as *const _ as usize);
                 // Create a buffer with the program's stack
                 let program_stack = boxed_slice_with_alignment(4096, 4096, &0u8);
-                root_table.map(&program_stack[0] as *const _ as usize, 0x40000, 4096, EntryBits::VALID | EntryBits::READ | EntryBits::WRITE | EntryBits::USER);
+                root_table.map(
+                    &program_stack[0] as *const _ as usize,
+                    0x40000,
+                    4096,
+                    EntryBits::VALID | EntryBits::READ | EntryBits::WRITE | EntryBits::USER,
+                );
                 process.trap_frame.general_registers[Registers::Sp.idx()] = 0x40800;
                 core::mem::forget(program_stack);
                 process.is_supervisor = false;
-                process.trap_frame.satp = (&*root_table.0 as *const crate::paging::Table as usize)  >> 12  | cpu::csr::SATP_SV39;
+                process.trap_frame.satp = (&*root_table.0 as *const crate::paging::Table as usize)
+                    >> 12
+                    | cpu::csr::SATP_SV39;
             });
         };
         core::mem::forget(allocated_segments);
         core::mem::forget(root_table);
         core::mem::forget(new_page_table);
-        
+
         //crate::sbi::shutdown(0);
     };
     let block = Box::pin(block);

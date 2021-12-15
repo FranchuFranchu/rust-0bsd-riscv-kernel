@@ -1,7 +1,5 @@
-use core::num::NonZeroUsize;
-use core::fmt::Debug;
-use alloc::sync::Weak;
-use alloc::boxed::Box;
+use alloc::{boxed::Box, sync::Weak};
+use core::{fmt::Debug, num::NonZeroUsize};
 
 #[repr(usize)]
 pub enum StandardHandleErrors {
@@ -10,12 +8,14 @@ pub enum StandardHandleErrors {
 
 #[async_trait]
 pub trait HandleBackend {
-    fn create_singleton() -> alloc::sync::Arc<dyn HandleBackend + Send + Sync + 'static> where Self: Sized;
-    
+    fn create_singleton() -> alloc::sync::Arc<dyn HandleBackend + Send + Sync + 'static>
+    where
+        Self: Sized;
+
     async fn open(&self, id: &usize, options: &[usize]);
-    
+
     fn name(&self) -> &'static str;
-    
+
     async fn read(&self, id: &usize, buf: &mut [u8], options: &[usize]) -> Result<usize, usize> {
         Err(StandardHandleErrors::Unimplemented as usize)
     }
@@ -44,7 +44,10 @@ pub struct Handle {
 }
 
 impl Debug for Handle {
-    fn fmt(&self, fmt: &mut core::fmt::Formatter<'_>) -> core::result::Result<(), core::fmt::Error> { 
+    fn fmt(
+        &self,
+        fmt: &mut core::fmt::Formatter<'_>,
+    ) -> core::result::Result<(), core::fmt::Error> {
         fmt.debug_struct("Handle")
             .field("fd_id", &self.fd_id)
             .field("backend", &self.backend.upgrade().map(|s| s.name()))

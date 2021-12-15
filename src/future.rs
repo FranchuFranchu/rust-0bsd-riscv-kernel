@@ -8,8 +8,12 @@
 //! > is initially unknown, usually because the computation of
 //! > its value is not yet complete.
 
-use alloc::sync::{Arc, Weak};
-use alloc::{boxed::Box, collections::VecDeque, task::Wake};
+use alloc::{
+    boxed::Box,
+    collections::VecDeque,
+    sync::{Arc, Weak},
+    task::Wake,
+};
 use core::{
     future::Future,
     task::{Context, Waker},

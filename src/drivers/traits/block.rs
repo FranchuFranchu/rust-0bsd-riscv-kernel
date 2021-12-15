@@ -1,14 +1,13 @@
 use alloc::boxed::Box;
-use core::{any::Any, future::Future};
-use core::marker::PhantomData;
-use crate::unsafe_buffer::{UnsafeSliceMut, UnsafeSlice};
+use core::{any::Any, future::Future, marker::PhantomData};
+
+use crate::unsafe_buffer::{UnsafeSlice, UnsafeSliceMut};
 
 #[derive(Debug)]
 pub enum BlockRequestFutureBuffer {
     WriteFrom(UnsafeSlice<u8>),
-    ReadInto(UnsafeSliceMut<u8>)
+    ReadInto(UnsafeSliceMut<u8>),
 }
-
 
 pub trait BlockDevice {
     fn _create_request(
@@ -38,15 +37,27 @@ pub trait GenericBlockDevice: BlockDevice + Send + Sync {
 
     async fn read(&self, sector: u64, length: usize) -> Result<Box<[u8]>, ()> {
         let mut buffer = alloc::vec![0; length].into_boxed_slice();
-        self.create_request(sector, BlockRequestFutureBuffer::ReadInto(unsafe { UnsafeSliceMut::new(&mut *buffer) })).await;
+        self.create_request(
+            sector,
+            BlockRequestFutureBuffer::ReadInto(unsafe { UnsafeSliceMut::new(&mut *buffer) }),
+        )
+        .await;
         Ok(buffer)
     }
     async fn read_buffer(&self, sector: u64, buffer: &mut [u8]) -> Result<(), ()> {
-        self.create_request(sector, BlockRequestFutureBuffer::ReadInto(unsafe { UnsafeSliceMut::new(buffer) })).await;
+        self.create_request(
+            sector,
+            BlockRequestFutureBuffer::ReadInto(unsafe { UnsafeSliceMut::new(buffer) }),
+        )
+        .await;
         Ok(())
     }
     async fn write(&self, sector: u64, buffer: &[u8]) -> Result<(), ()> {
-        self.create_request(sector, BlockRequestFutureBuffer::WriteFrom(unsafe { UnsafeSlice::new(buffer) })).await;
+        self.create_request(
+            sector,
+            BlockRequestFutureBuffer::WriteFrom(unsafe { UnsafeSlice::new(buffer) }),
+        )
+        .await;
         Ok(())
     }
 }
@@ -68,17 +79,26 @@ where
 {
     async fn read(&self, sector: u64, length: usize) -> Result<Box<[u8]>, ()> {
         let mut buffer = alloc::vec![0; length].into_boxed_slice();
-        let f = RwLock::read(self).create_request(sector, BlockRequestFutureBuffer::ReadInto(unsafe { UnsafeSliceMut::new(&mut buffer) }));
+        let f = RwLock::read(self).create_request(
+            sector,
+            BlockRequestFutureBuffer::ReadInto(unsafe { UnsafeSliceMut::new(&mut buffer) }),
+        );
         f.await;
         Ok(buffer)
     }
     async fn read_buffer(&self, sector: u64, buffer: &mut [u8]) -> Result<(), ()> {
-        let f = RwLock::read(self).create_request(sector, BlockRequestFutureBuffer::ReadInto(unsafe { UnsafeSliceMut::new(buffer) }));
+        let f = RwLock::read(self).create_request(
+            sector,
+            BlockRequestFutureBuffer::ReadInto(unsafe { UnsafeSliceMut::new(buffer) }),
+        );
         f.await;
         Ok(())
     }
     async fn write(&self, sector: u64, buffer: &[u8]) -> Result<(), ()> {
-        let  f = RwLock::read(self).create_request(sector, BlockRequestFutureBuffer::WriteFrom(unsafe { UnsafeSlice::new(buffer) }));
+        let f = RwLock::read(self).create_request(
+            sector,
+            BlockRequestFutureBuffer::WriteFrom(unsafe { UnsafeSlice::new(buffer) }),
+        );
         f.await;
         Ok(())
     }

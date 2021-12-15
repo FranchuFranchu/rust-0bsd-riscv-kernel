@@ -1,7 +1,5 @@
 /// Code to construct and traverse a flattened device tree
-
 // See https://github.com/devicetree-org/devicetree-specification/releases/tag/v0.3
-
 use alloc::{
     borrow::ToOwned,
     collections::{BTreeMap, VecDeque},

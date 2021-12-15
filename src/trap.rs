@@ -1,8 +1,18 @@
 //! A function that runs when a trap happens
 
-use crate::{HART_PANIC_COUNT, context_switch, cpu::{self, load_hartid, read_satp, read_sscratch, read_sstatus}, external_interrupt, hart::get_this_hart_meta, interrupt_context_waker, paging::{Table, sv39::RootTable}, process::delete_process, sbi, scheduler::schedule_next_slice, syscall, timeout, timer_queue};
-
 pub use crate::trap_frame::TrapFrame;
+use crate::{
+    context_switch,
+    cpu::{self, load_hartid, read_satp, read_sscratch, read_sstatus},
+    external_interrupt,
+    hart::get_this_hart_meta,
+    interrupt_context_waker,
+    paging::{sv39::RootTable, Table},
+    process::{delete_process, try_get_process},
+    sbi,
+    scheduler::schedule_next_slice,
+    syscall, timeout, timer_queue, HART_PANIC_COUNT,
+};
 
 /// If sscratch equals original_trap_frame, then set sscratch to the boot frame for this hart
 pub fn use_boot_frame_if_necessary(original_trap_frame: *const TrapFrame) {
@@ -73,6 +83,7 @@ pub unsafe extern "C" fn trap_handler(
     // A double fault is when the fault handler faults
     if !is_interrupt
         && in_interrupt_context()
+        && read_sscratch().as_ref().unwrap().is_in_fault_trap()
         && read_sscratch().as_ref().unwrap().has_trapped_before()
     {
         read_sscratch().as_mut().unwrap().set_double_faulting();
@@ -151,6 +162,7 @@ pub unsafe extern "C" fn trap_handler(
             }
         }
     } else {
+        read_sscratch().as_mut().unwrap().set_in_fault_trap();
         match cause {
             8 | 9 | 10 | 11 => {
                 info!("Environment call to us happened!");
@@ -158,12 +170,16 @@ pub unsafe extern "C" fn trap_handler(
             }
             _ => {
                 error!(
-                    "Error with cause: {:?} pc: {:X} *pc: {:X} tval: {:X} supervisor: {:?}",
+                    "Error with cause: {:?} pc: {:X} *pc: {:X} tval: {:X} mode: {}",
                     cause,
                     unsafe { (*frame).pc },
                     unsafe { *((*frame).pc as *const u32) },
                     unsafe { tval as *const u32 as usize },
-                    unsafe { read_sstatus() & 1 << 8}
+                    if unsafe { read_sstatus() & 1 << 8 != 0 } {
+                        "supervisor"
+                    } else {
+                        "user"
+                    }
                 );
                 // Kill the process
                 delete_process((*frame).pid);
@@ -171,7 +187,12 @@ pub unsafe extern "C" fn trap_handler(
             }
         }
     }
+    read_sscratch().as_mut().unwrap().clear_in_fault_trap();
     interrupt_context_waker::wake_all();
+
+    if epc > 0x8000000 as usize && !try_get_process(&(*frame).pid).read().is_supervisor {
+        panic!("{:?}", "user process aren't really meant to do this");
+    }
 
     debug!("\x1b[1;36m^ EXIT TRAP {}\x1b[0m", load_hartid());
     clear_interrupt_context();

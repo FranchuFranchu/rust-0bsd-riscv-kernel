@@ -1,5 +1,4 @@
 /// Start and setup new harts
-
 use alloc::{boxed::Box, collections::BTreeMap, sync::Arc};
 use core::{pin::Pin, sync::atomic::AtomicBool};
 

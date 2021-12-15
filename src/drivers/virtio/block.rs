@@ -14,7 +14,12 @@ use core::{
 };
 
 use super::{SplitVirtqueue, VirtioDevice, VirtioDeviceType};
-use crate::{drivers::traits::block::BlockRequestFutureBuffer, interrupt_context_waker::InterruptContextWaker, lock::shared::{Mutex, RwLock}, unsafe_buffer::{UnsafeSlice, UnsafeSliceMut}};
+use crate::{
+    drivers::traits::block::BlockRequestFutureBuffer,
+    interrupt_context_waker::InterruptContextWaker,
+    lock::shared::{Mutex, RwLock},
+    unsafe_buffer::{UnsafeSlice, UnsafeSliceMut},
+};
 
 // See https://docs.oasis-open.org/virtio/virtio/v1.1/cs01/virtio-v1.1-cs01.html#x1-2440004
 // section 5.2.6
@@ -46,7 +51,7 @@ pub struct VirtioBlockDevice {
 pub struct BlockRequestFuture {
     device: Weak<RwLock<VirtioBlockDevice>>,
     header: RequestHeader,
-    
+
     pub buffer: Option<BlockRequestFutureBuffer>,
     pub descriptor_id: Option<u16>,
     pub was_queued: bool,
@@ -133,16 +138,8 @@ impl VirtioBlockDevice {
         use BlockRequestFutureBuffer::*;
 
         last = match future.buffer.take().unwrap() {
-            WriteFrom(e) => vq_lock.new_descriptor_from_unsafe_slice(
-                e,
-                false,
-                Some(last),
-            ),
-            ReadInto(e) => vq_lock.new_descriptor_from_unsafe_slice_mut(
-                e,
-                true,
-                Some(last),
-            ),
+            WriteFrom(e) => vq_lock.new_descriptor_from_unsafe_slice(e, false, Some(last)),
+            ReadInto(e) => vq_lock.new_descriptor_from_unsafe_slice_mut(e, true, Some(last)),
         };
         //println!("Ptr {:?} {:?}", s.as_ptr() as *mut u8, s.len());
         let slice = unsafe {
@@ -205,13 +202,12 @@ impl VirtioBlockDevice {
 
             let request_body = &data[core::mem::size_of::<RequestHeader>()..data.len() - 1];
             */
-            
+
             // Todo: Reconstruct whether this was a ReadInto or WriteFrom variant
             let mut components = descriptor_chain_data_iterator.map(|s| unsafe {
-                BlockRequestFutureBuffer::WriteFrom(UnsafeSlice::new(core::slice::from_raw_parts_mut(
-                    s.as_ptr() as *mut u8,
-                    s.len(),
-                )))
+                BlockRequestFutureBuffer::WriteFrom(UnsafeSlice::new(
+                    core::slice::from_raw_parts_mut(s.as_ptr() as *mut u8, s.len()),
+                ))
             });
             let buffer_box = components.nth(1).unwrap();
 

@@ -17,7 +17,7 @@ impl<'a> Paging for RootTable<'a> {
         let vpn2_min = (virtual_addr >> 30) & (ENTRY_COUNT - 1);
         let vpn1_min = (virtual_addr >> 21) & (ENTRY_COUNT - 1);
         let vpn0_min = (virtual_addr >> 12) & (ENTRY_COUNT - 1);
-        
+
         //println!("Len {:?}", length);
         let mut vpn2_max = ((virtual_addr + length - 1) >> 30) & (ENTRY_COUNT - 1);
         let mut vpn1_max = ((virtual_addr + length - 1) >> 21) & (ENTRY_COUNT - 1);
@@ -26,17 +26,22 @@ impl<'a> Paging for RootTable<'a> {
         //println!("vp1 {:?} {:?}", vpn1_min, vpn1_max);
         //println!("vp0 {:?} {:?}", vpn0_min, vpn0_max);
         //println!("{:?}", flags);
-        if vpn0_min > vpn0_max { vpn0_max = ENTRY_COUNT };
-        if vpn1_min > vpn1_max { vpn1_max = ENTRY_COUNT - 1 };
-        if vpn2_min > vpn2_max { vpn2_max = ENTRY_COUNT - 1 };
+        if vpn0_min > vpn0_max {
+            vpn0_max = ENTRY_COUNT
+        };
+        if vpn1_min > vpn1_max {
+            vpn1_max = ENTRY_COUNT - 1
+        };
+        if vpn2_min > vpn2_max {
+            vpn2_max = ENTRY_COUNT - 1
+        };
 
         let offset: usize = physical_addr.wrapping_sub(virtual_addr) >> 2;
 
         for vpn2 in vpn2_min..vpn2_max + 1 {
-            
             let mut entry = &mut self.0.entries[vpn2];
             //println!("vp2 {} {:p}", vpn2, &entry);
-            
+
             if (vpn2 == vpn2_max || vpn2 == vpn2_min) && entry.is_leaf() {
                 unsafe { entry.split(MEGAPAGE_SIZE) };
                 //info!("{}", "Split")
@@ -58,8 +63,7 @@ impl<'a> Paging for RootTable<'a> {
                         for vpn0 in vpn0_min..vpn0_max {
                             let mut entry = &mut table[vpn0];
                             let virt = vpn2 << 30 | vpn1 << 21 | vpn0 << 12;
-                            entry.value =
-                                (virt >> 2 | flags).wrapping_add(offset);
+                            entry.value = (virt >> 2 | flags).wrapping_add(offset);
                             //println!("  vp0 {} {:x} {:?}", vpn0, virt, entry);
                             //println!("newval {:x}", entry.value);
                         }
@@ -91,3 +95,5 @@ impl<'a> Paging for RootTable<'a> {
         }
     }
 }
+
+impl<'a> PagingDebug for RootTable<'a> {}

@@ -27,7 +27,7 @@ use core::marker::PhantomData;
 ///
 /// // We can also place this buffer in a future, in a driver's internal state, etc.
 /// // Finally, when we're done:
-/// 
+///
 /// drop(unsafe_slice);
 /// drop(array);
 /// ```
@@ -38,47 +38,47 @@ pub struct UnsafeSlice<T> {
 
 impl<T> UnsafeSlice<T> {
     /// Creates a new unsafe shared slice from a regular Rust slice
-	/// # Safety
-	/// `slice` must be still alive when the struct is dropped
-	pub unsafe fn new(slice: &[T]) -> Self {
-		Self {
-			address: slice.as_ptr(),
-			length: slice.len(),
-		}
-	}
-	
-	/// 
-	pub fn get(&self) -> &[T] {
-		unsafe { core::slice::from_raw_parts(self.address, self.length) }
-	}
-	
-	/// The starting address of this slice
-	pub fn address(&self) -> *const T {
-		self.address
-	}
-	
-	/// The length of this slice. This is the amount of elements, not the amount of bytes.
-	pub fn length(&self) -> usize {
-		self.length
-	}
-	
-	/// Copies this slice.
-	/// # Safety
-	/// Since this artifically extends the lifetime of the unsafe slice, you must make sure that the original Rust slice is still alive during the lifetime of the new unsafe slice.
-	pub unsafe fn copy(&self) -> Self {
-		Self {
-			address: self.address,
-			length: self.length,
-		}
-	}
-	
-	/// Turns this slice into a mutable slice. I don't really think this is usually sound.
-	pub unsafe fn upcast(self) -> UnsafeSliceMut<T> {
-		UnsafeSliceMut {
-			address: self.address as *mut T,
-			length: self.length,
-		}
-	}
+    /// # Safety
+    /// `slice` must be still alive when the struct is dropped
+    pub unsafe fn new(slice: &[T]) -> Self {
+        Self {
+            address: slice.as_ptr(),
+            length: slice.len(),
+        }
+    }
+
+    ///
+    pub fn get(&self) -> &[T] {
+        unsafe { core::slice::from_raw_parts(self.address, self.length) }
+    }
+
+    /// The starting address of this slice
+    pub fn address(&self) -> *const T {
+        self.address
+    }
+
+    /// The length of this slice. This is the amount of elements, not the amount of bytes.
+    pub fn length(&self) -> usize {
+        self.length
+    }
+
+    /// Copies this slice.
+    /// # Safety
+    /// Since this artifically extends the lifetime of the unsafe slice, you must make sure that the original Rust slice is still alive during the lifetime of the new unsafe slice.
+    pub unsafe fn copy(&self) -> Self {
+        Self {
+            address: self.address,
+            length: self.length,
+        }
+    }
+
+    /// Turns this slice into a mutable slice. I don't really think this is usually sound.
+    pub unsafe fn upcast(self) -> UnsafeSliceMut<T> {
+        UnsafeSliceMut {
+            address: self.address as *mut T,
+            length: self.length,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -105,7 +105,7 @@ impl<T> UnsafeSlice<T> {
 ///
 /// // We can also place this buffer in a future, in a driver's internal state, etc.
 /// // Finally, when we're done
-/// 
+///
 /// drop(unsafe_slice);
 /// drop(array);
 /// ```
@@ -114,34 +114,33 @@ pub struct UnsafeSliceMut<T> {
     length: usize,
 }
 
-
 impl<T> UnsafeSliceMut<T> {
-	/// # Safety
-	/// `slice` must be still alive when the struct is dropped
-	pub unsafe fn new(slice: &mut [T]) -> Self {
-		Self {
-			address: slice.as_mut_ptr(),
-			length: slice.len(),
-		}
-	}
-	
-	pub fn get(self) -> &'static mut [T] {
-		unsafe { core::slice::from_raw_parts_mut(self.address, self.length) }
-	}
-	
-	pub fn address(&self) -> *mut T {
-		self.address
-	}
-	
-	pub fn length(&self) -> usize {
-		self.length
-	}
-	pub unsafe fn downgrade(self) -> UnsafeSlice<T> {
-		UnsafeSlice {
-			address: self.address,
-			length: self.length,
-		}
-	}
+    /// # Safety
+    /// `slice` must be still alive when the struct is dropped
+    pub unsafe fn new(slice: &mut [T]) -> Self {
+        Self {
+            address: slice.as_mut_ptr(),
+            length: slice.len(),
+        }
+    }
+
+    pub fn get(self) -> &'static mut [T] {
+        unsafe { core::slice::from_raw_parts_mut(self.address, self.length) }
+    }
+
+    pub fn address(&self) -> *mut T {
+        self.address
+    }
+
+    pub fn length(&self) -> usize {
+        self.length
+    }
+    pub unsafe fn downgrade(self) -> UnsafeSlice<T> {
+        UnsafeSlice {
+            address: self.address,
+            length: self.length,
+        }
+    }
 }
 
 unsafe impl<T> Send for UnsafeSlice<T> where T: Send + Sync {}

@@ -22,14 +22,12 @@
     type_ascription,
     map_first_last,
     global_asm,
-    never_type,
+    never_type
 )]
 #![cfg_attr(not(test), no_std)]
 #![no_main]
 #![allow(incomplete_features, clippy::empty_loop)]
-
 // On many parts of the kernel, I would like to specify the justification for each unsafe fn call, even if it is inside an unsafe fn already
-
 #![allow(unused_unsafe)]
 
 extern crate alloc;
@@ -47,7 +45,7 @@ use crate::{
     hart::get_hart_meta,
     paging::Paging,
     plic::Plic0,
-    process::delete_process,
+    process::{delete_process, PidSlot},
 };
 
 #[macro_use]
@@ -134,8 +132,7 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
     }
 
     cpu::fence_vma();
-    
-    
+
     //kernel_debugging::backtrace::backtrace();
     //kernel_debugging::pub_names::test();
 
@@ -163,7 +160,7 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 
     timer_queue::init();
     timer_queue::init_hart();
-    
+
     handle_backends::initialize_constructors();
 
     // Finally, enable interrupts in the cpu level
@@ -224,18 +221,19 @@ fn panic(info: &PanicInfo) -> ! {
         }
     }
 
-    let lock = match PROCESSES.try_write() {
+    /*let lock = match PROCESSES.try_write() {
         Some(e) => e,
         None => unsafe {
+            PROCESSES.data_ptr().as_ref()
             PROCESSES.force_unlock_write();
             PROCESSES.write()
         },
-    };
+    };*/
 
     if false
     //lock.contains_key(&crate::process::Process::this_pid())
     {
-        drop(lock);
+        /*drop(lock);*/
         delete_process(crate::process::Process::this_pid());
     }
 
@@ -259,7 +257,6 @@ fn panic(info: &PanicInfo) -> ! {
     let trap_frame = cpu::read_sscratch();
 
     debug!("{:?}", trap_frame);
-    
 
     // Check if trap frame is out of bounds (which means we can't read data from it)
     if (trap_frame as usize) > 0x80200000
@@ -279,7 +276,7 @@ fn panic(info: &PanicInfo) -> ! {
     } else {
         println!("\"{}\" at unknown location", message);
     }
-    
+
     // Shutdown immediately
     sbi::shutdown(0);
 
@@ -296,20 +293,23 @@ fn panic(info: &PanicInfo) -> ! {
 #[no_mangle]
 pub fn status_summary() {
     println!("{:?}", "Processes: ");
-    PROCESSES.read().iter().for_each(|(k, v)| {
-        let v = v.read();
-        println!(
-            "{}:",
-            v.name.as_ref().map(|s| s.as_ref()).unwrap_or("<unnamed>")
-        );
-        println!("	{:?}", v.state);
-    });
+    PROCESSES
+        .read()
+        .iter()
+        .filter(|(k, v)| PidSlot::is_used(v))
+        .for_each(|(k, v)| {
+            let v = v.unwrap_ref().unwrap().read();
+            println!(
+                "{}:",
+                v.name.as_ref().map(|s| s.as_ref()).unwrap_or("<unnamed>")
+            );
+            println!("	{:?}", v.state);
+        });
 }
 
 pub mod allocator;
-pub mod asm;
 pub mod as_register;
-pub mod kernel_debugging;
+pub mod asm;
 pub mod context_switch;
 pub mod device_setup;
 pub mod drivers;
@@ -321,13 +321,13 @@ pub mod handle;
 pub mod handle_backends;
 pub mod hart;
 pub mod interrupt_context_waker;
+pub mod kernel_debugging;
 pub mod lock;
 pub mod logger;
 pub mod paging;
 pub mod plic;
 pub mod process;
 pub mod sbi;
-pub mod trap_future_executor;
 pub mod scheduler;
 pub mod syscall;
 pub mod test_task;
@@ -335,5 +335,6 @@ pub mod timeout;
 pub mod timer_queue;
 pub mod trap;
 pub mod trap_frame;
+pub mod trap_future_executor;
 pub mod unsafe_buffer;
 pub mod virtual_buffers;

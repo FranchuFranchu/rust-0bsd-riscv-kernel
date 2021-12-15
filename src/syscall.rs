@@ -3,7 +3,16 @@ use core::slice;
 use gimli::Register;
 use num_enum::{FromPrimitive, IntoPrimitive};
 
-use crate::{context_switch, cpu::{Registers, read_satp, write_satp}, paging::{EntryBits, Paging}, process::{self}, test_task::boxed_slice_with_alignment, trap::TrapFrame, trap_future_executor::block_and_return_to_userspace};
+use crate::{
+    context_switch,
+    cpu::{read_satp, write_satp, Registers},
+    paging::{EntryBits, Paging},
+    process::{self},
+    test_task::boxed_slice_with_alignment,
+    trap::TrapFrame,
+    trap_future_executor::block_and_return_to_userspace,
+    virtual_buffers::new_virtual_buffer,
+};
 
 #[repr(usize)]
 #[derive(IntoPrimitive, FromPrimitive, Debug)]
@@ -12,7 +21,7 @@ pub enum SyscallNumbers {
     Exit = 1,
     // Marks this task as "yielded" until it gets woken up by a Waker
     Yield = 2,
-    
+
     // Page operations
     AllocPages = 3,
     FreePages = 4,
@@ -53,6 +62,7 @@ pub fn do_syscall(frame: *mut TrapFrame) {
 
     let number = SyscallNumbers::from(frame.general_registers[Registers::A7.idx()]);
     frame.pc += 4;
+    unsafe { write_satp(frame.satp) };
     use SyscallNumbers::*;
     match number {
         Exit => {
@@ -67,62 +77,118 @@ pub fn do_syscall(frame: *mut TrapFrame) {
             let size = size.unstable_div_ceil(4096) * 4096;
             let flags = frame.general_registers[Registers::A2.idx()];
             let paging_flags = flags & EntryBits::RWX;
-            
+
             // TODO fix aliasing issues!
             let mut root_table = unsafe { frame.satp_as_sv39_root_table() };
             let new_pages = boxed_slice_with_alignment(size, 4096, &0);
-            
-            root_table.map(&new_pages[0] as *const _ as usize, virtual_address, size, flags | EntryBits::VALID | EntryBits::USER);
+
+            root_table.map(
+                &new_pages[0] as *const _ as usize,
+                virtual_address,
+                size,
+                flags | EntryBits::VALID | EntryBits::USER,
+            );
             core::mem::forget(root_table);
             core::mem::forget(new_pages);
-            
         }
-        FreePages => {
-            
-        }
-        
+        FreePages => {}
+
         Open => {
-            use alloc::sync::Arc;
-            use crate::handle::Handle;
-            
-            let id = frame.general_registers[Registers::A0.idx()];
-            let options = &frame.general_registers[Registers::A1.idx()..Registers::A7.idx()+1];
-            
-            let p = crate::process::try_get_process(&frame.pid);
-            let mut process_lock = p.write();
-            let new_fd_number = process_lock.handles.last_key_value().map(|s| s.0 + 1).unwrap_or(1);
-            
-            let backend_instance = crate::handle_backends::open(&id, &new_fd_number, options);
-            core::mem::forget(backend_instance.clone());
-            process_lock.handles.insert(new_fd_number, Handle {
-                fd_id: new_fd_number,
-                backend: Arc::downgrade(&backend_instance),
-                backend_meta: 0,
-            });
-            frame.general_registers[Registers::A0.idx()] = new_fd_number;   
-        }
-        
-        Write => {
-            let fut = async {
+            let current_pid = frame.pid;
+            let fut = async move {
+                use alloc::sync::Arc;
+
+                use crate::handle::Handle;
+
                 let id = frame.general_registers[Registers::A0.idx()];
-                
-                let old_satp = read_satp();
-                unsafe { write_satp(frame.satp) };
-                
-                // TODO make safe
-                let s = unsafe { slice::from_raw_parts(frame.general_registers[Registers::A1.idx()] as *const u8, frame.general_registers[Registers::A2.idx()]) };
-                let options = &frame.general_registers[Registers::A3.idx()..Registers::A7.idx()+1];
-                
-                let p = crate::process::try_get_process(&frame.pid);
-                let process_lock = p.write();
-                process_lock.handles[&id].backend.upgrade().as_ref().unwrap().write(&id, s, options);
-                unsafe { write_satp(old_satp) };
+                let options =
+                    &frame.general_registers[Registers::A1.idx()..Registers::A7.idx() + 1];
+
+                let process = crate::process::try_get_process(&frame.pid);
+                let new_fd_number = process
+                    .write()
+                    .handles
+                    .last_key_value()
+                    .map(|s| s.0 + 1)
+                    .unwrap_or(1);
+
+                println!("{:?}", "will wait");
+                let backend_instance =
+                    crate::handle_backends::open(&id, &new_fd_number, options).await;
+                println!("{:?}", backend_instance.name());
+                core::mem::forget(backend_instance.clone());
+                process.write().handles.insert(
+                    new_fd_number,
+                    Handle {
+                        fd_id: new_fd_number,
+                        backend: Arc::downgrade(&backend_instance),
+                        backend_meta: 0,
+                    },
+                );
+                frame.general_registers[Registers::A0.idx()] = new_fd_number;
             };
-            block_and_return_to_userspace(frame.pid, core::pin::Pin::new(&mut alloc::boxed::Box::pin(fut)));
-            
-            
+            block_and_return_to_userspace(current_pid, alloc::boxed::Box::pin(fut));
         }
-        
+
+        Write => {
+            let current_pid = frame.pid;
+            let fut = async move {
+                let id = frame.general_registers[Registers::A0.idx()];
+
+                // TODO make safe
+
+                let buf = unsafe {
+                    core::slice::from_raw_parts(
+                        frame.general_registers[Registers::A1.idx()] as *const u8,
+                        frame.general_registers[Registers::A2.idx()],
+                    )
+                };
+
+                let options =
+                    &frame.general_registers[Registers::A3.idx()..Registers::A7.idx() + 1];
+                let backend = {
+                    let process = crate::process::try_get_process(&frame.pid);
+                    let process = process.write();
+                    process.handles[&id].backend.upgrade()
+                };
+                backend
+                    .as_ref()
+                    .unwrap()
+                    .write(&id, buf, options)
+                    .await
+                    .unwrap();
+            };
+            block_and_return_to_userspace(current_pid, alloc::boxed::Box::pin(fut));
+        }
+        Read => {
+            let current_pid = frame.pid;
+            let fut = async move {
+                let id = frame.general_registers[Registers::A0.idx()];
+
+                // TODO make safe
+                let buf = unsafe {
+                    core::slice::from_raw_parts_mut(
+                        frame.general_registers[Registers::A1.idx()] as *mut u8,
+                        frame.general_registers[Registers::A2.idx()],
+                    )
+                };
+                let options =
+                    &frame.general_registers[Registers::A3.idx()..Registers::A7.idx() + 1];
+                let backend = {
+                    let process = crate::process::try_get_process(&frame.pid);
+                    let process = process.write();
+                    process.handles[&id].backend.upgrade()
+                };
+                backend
+                    .as_ref()
+                    .unwrap()
+                    .read(&id, buf, options)
+                    .await
+                    .unwrap();
+            };
+            block_and_return_to_userspace(current_pid, alloc::boxed::Box::pin(fut));
+        }
+
         Unknown => {
             warn!(
                 "Unknown syscall {:?}",
@@ -133,6 +199,7 @@ pub fn do_syscall(frame: *mut TrapFrame) {
             warn!("Unimplemented syscall {:?}", number);
         }
     }
+    unsafe { write_satp(frame.kernel_satp) };
 }
 
 pub fn syscall_exit(frame: &mut TrapFrame, return_code: usize) {

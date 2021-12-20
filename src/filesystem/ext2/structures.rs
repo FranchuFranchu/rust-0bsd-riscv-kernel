@@ -122,7 +122,7 @@ pub struct Superblock {
     /// 16bit value used as the default group id for reserved blocks.
     pub def_resgid: u16,
 
-    /// 32bit value used as index to the  first  inode  useable  for  standard
+    /// 32bit value used as index to the  first inode  useable  for  standard
     /// files. In revision 0, the first	non-reserved inode is fixed to
     /// 11 (EXT2_GOOD_OLD_FIRST_INO). In revision 1 and later
     /// this value may be set to any value.

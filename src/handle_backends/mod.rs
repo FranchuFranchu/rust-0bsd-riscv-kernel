@@ -1,10 +1,11 @@
 use alloc::{collections::BTreeMap, sync::Arc};
 
-use self::{filesystem::FilesystemHandleBackend, log_output::LogOutputHandleBackend};
+use self::{filesystem::FilesystemHandleBackend, log_output::LogOutputHandleBackend, process_egg::ProcessEggBackend};
 use crate::{handle::HandleBackend, lock::shared::RwLock};
 
 pub mod filesystem;
 pub mod log_output;
+pub mod process_egg;
 
 pub static BACKEND_CONSTRUCTORS: RwLock<
     BTreeMap<usize, fn() -> Arc<dyn HandleBackend + Send + Sync + 'static>>,
@@ -20,6 +21,9 @@ pub fn initialize_constructors() {
     BACKEND_CONSTRUCTORS
         .write()
         .insert(2, FilesystemHandleBackend::create_singleton);
+    BACKEND_CONSTRUCTORS
+        .write()
+        .insert(3, ProcessEggBackend::create_singleton);
 }
 
 pub async fn open(

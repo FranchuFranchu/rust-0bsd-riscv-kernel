@@ -3,16 +3,12 @@ use proc_macro2::Ident;
 use proc_macro2::Span;
 use proc_macro2::TokenStream as TokenStream2;
 use proc_macro::{TokenStream};
-use quote::{ToTokens, quote};
+use quote::quote;
 use syn::Data;
 use syn::DeriveInput;
-use syn::Field;
-use syn::PathSegment;
 use syn::Variant;
 use syn::parse_macro_input;
-use syn::Expr;
 use syn::visit_mut::VisitMut;
-use syn::visit_mut::visit_variant_mut;
 
 
 #[proc_macro_derive(AsRegister)]
@@ -70,7 +66,6 @@ impl AsRegisterStruct {
 
 impl VisitMut for AsRegisterStruct {
     fn visit_variant_mut(&mut self, variant: &mut Variant) {
-        use syn::{Type, PathArguments, GenericArgument, ExprLit, Lit, LitStr, TypePath};
         
         let fields = variant_fields_get_fields(&variant.fields);
         let variant_count_for_this_type = if fields.len() == 0 {
@@ -91,7 +86,7 @@ impl VisitMut for AsRegisterStruct {
         
         let ident = &variant.ident;
         
-        let mut recursive_variant_count = &mut self.recursive_variant_count;
+        let recursive_variant_count = &mut self.recursive_variant_count;
         
         let from_register_creating_code = if fields.len() == 0 {
             quote! {
@@ -120,8 +115,6 @@ impl VisitMut for AsRegisterStruct {
                 }
             })
         } else if fields.len() == 1 {
-            let t = &fields.iter().next().unwrap().ty;
-            
             self.as_register_code.extend(quote! {
                 Self::#ident (e) => {
                     let variants_before_this = #(#recursive_variant_count)+*;
@@ -156,7 +149,7 @@ fn variant_fields_get_fields(f: &syn::Fields) -> WeakCow<Punctuated<syn::Field, 
 
 
 #[proc_macro]
-pub fn generate_extra_data_structs(input: TokenStream) -> TokenStream {
+pub fn generate_extra_data_structs(_input: TokenStream) -> TokenStream {
     let mut stream = TokenStream::new();
     for i in 0..4 {
         let fields = vec![quote! {usize}].into_iter().cycle().take(i);
@@ -172,6 +165,7 @@ pub fn generate_extra_data_structs(input: TokenStream) -> TokenStream {
 }
 
 use core::ops::Deref;
+#[allow(dead_code)] 
 enum WeakCow<'a, T> {
     Owned(T),
     Borrowed(&'a T)
@@ -188,7 +182,7 @@ impl<'a, T> Deref for WeakCow<'a, T> {
     }
 }
 
-use core::ops::DerefMut;
+#[allow(dead_code)] 
 enum WeakCowMut<'a, T> {
     Owned(T),
     Borrowed(&'a mut T)

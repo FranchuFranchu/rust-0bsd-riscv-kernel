@@ -30,7 +30,7 @@ impl<T> AsRegister for T where T: Into<usize> {
 impl AsRegister for usize {
     #[inline]
     fn as_register(&self) -> (usize, SmallVec<[usize; 2]>) {
-        (0, smallvec::smallvec![(*self)])
+        (0, smallvec::smallvec![*self])
     }
     
     fn recursive_variant_count() -> usize {
@@ -48,7 +48,7 @@ macro_rules! impl_as_register_as_same_size_template {
     $( impl<T> AsRegister for $t
     {
         fn as_register(&self) -> (usize, SmallVec<[usize; 2]>) {
-            (0, smallvec::smallvec![(*self as _)])
+            (0, smallvec::smallvec![*self as _])
         }
         
         fn recursive_variant_count() -> usize {
@@ -70,7 +70,7 @@ macro_rules! impl_as_register_as {
     $( impl AsRegister for $t
     {
         fn as_register(&self) -> (usize, SmallVec<[usize; 2]>) {
-            (0, smallvec::smallvec![(*self as _)])
+            (0, smallvec::smallvec![*self as _])
         }
         
         fn recursive_variant_count() -> usize {

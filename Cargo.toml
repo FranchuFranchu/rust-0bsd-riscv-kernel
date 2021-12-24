@@ -1,37 +1,7 @@
-[package]
-name = "rust-0bsd-riscv-kernel"
-version = "0.0.6"
-edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-[dependencies]
-bitflags = "1.0"
-volatile-register = "0.2"
-num_enum = {version = "0.5", default-features = false}
-log = "0.4"
-itertools = {version = "0.10", default-features = false}
-cstr_core = "0.2"
-aligned = "0.3"
-kernel_proc_macros = { path = "src/crates/kernel_proc_macros" }
-slab_allocator_rs = "1"
-zerocopy = "*"
-spin = {features = ["lock_api"]}
-async-trait = "0.1"
-# Nightly feature is to make Mutex::new() a const fn
-downcast-rs = { version = "1.2.0", default-features = false }
-lock_api = {version = "0.4", features = ["nightly"]}
-kernel_io = { path = "src/crates/kernel_io" }
-elf_rs = "0.1"
-kernel_as_register = { path = "src/crates/kernel_as_register"}
-smallvec = "*"
-gimli = { default-features = false, features = ["read"]}
-
-[profile.dev]
-opt-level = 0
-lto = false
-panic = "abort"
-
-[features]
-backtrace = []
-autodebug = ["backtrace"]
-default = ["autodebug"]
+[workspace]
+members = [
+	"src/kernel_io",
+	"src/kernel_as_register",
+	"src/kernel_as_register_macro",
+	"src/kernel_main",
+]

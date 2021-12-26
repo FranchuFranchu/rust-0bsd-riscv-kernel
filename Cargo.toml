@@ -1,7 +1,0 @@
-[workspace]
-members = [
-	"src/kernel_io",
-	"src/kernel_as_register",
-	"src/kernel_as_register_macro",
-	"src/kernel_main",
-]

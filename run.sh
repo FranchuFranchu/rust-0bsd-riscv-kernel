@@ -29,7 +29,7 @@ qemu-system-riscv$BITS $QEMUOPTS \
 	-cpu rv$BITS \
 	-chardev stdio,id=console,mux=on \
 	-d unimp,guest_errors \
-	-blockdev driver=file,filename=drive.img,node-name=hda \
+	-blockdev driver=file,filename=`dirname $0`/drive.img,node-name=hda \
 	-device virtio-blk-device,drive=hda \
 	-smp 1 \
 	-serial chardev:console \

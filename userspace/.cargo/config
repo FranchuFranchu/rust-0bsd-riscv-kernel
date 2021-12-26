@@ -1,0 +1,9 @@
+[build]
+target = "riscv64gc-unknown-none-elf"
+rustflags = ["-Clink-arg=--strip-all"]
+
+[target.riscv32imac-unknown-none-elf]
+runner = ["test_program/place_binary.sh", "32", "riscv32imac"]
+
+[target.riscv64gc-unknown-none-elf]
+runner = ["test_program/place_binary.sh", "64", "riscv64gc"]

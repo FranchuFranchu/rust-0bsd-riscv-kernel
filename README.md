@@ -21,9 +21,15 @@ Stop QEMU with Ctrl-A and then X
 - [X] Userspace processes
 - [ ] Elf loader: Add support for multiple segments in the same page
 
+## Tips
+
+### Compiling `test_program`
+
+Make sure to compile it in release mode to make the binary smaller. There seem to be some problems with loading large binaries large now
+
 ## Some explanations for parts of the code
 
-## TrapFrame
+### TrapFrame
 
 `TrapFrame` is a struct which holds saved registers of the current process during interrupt handlers (and other information too). A pointer to the struct is stored in the `sscratch` CSR. Programmers have to be careful to prevent the struct from being dropped while `sscratch` still holds a pointer to it.
 

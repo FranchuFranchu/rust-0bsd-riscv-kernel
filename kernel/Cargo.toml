@@ -1,0 +1,7 @@
+[workspace]
+members = [
+	"kernel_io",
+	"kernel_as_register",
+	"kernel_as_register_macro",
+	"kernel_main",
+]

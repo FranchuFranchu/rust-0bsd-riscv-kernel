@@ -9,3 +9,5 @@
 Cargo.lock
 
 .gdb_history
+kernel/target
+userspace/target

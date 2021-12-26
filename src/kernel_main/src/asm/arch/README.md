@@ -1,1 +1,0 @@
-Only one of these files gets included depending on the RISCV architecture and extensions

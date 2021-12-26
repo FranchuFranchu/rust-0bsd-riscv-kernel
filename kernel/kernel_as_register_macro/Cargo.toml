@@ -1,0 +1,17 @@
+[package]
+name = "kernel_as_register_macro"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = {version = "1.0.71", features = ["fold", "extra-traits", "clone-impls", "derive", "visit-mut"]}
+quote = "1.0"
+proc-macro2 = "*"
+base64 = "0.13"
+static_assertions = "1"
+

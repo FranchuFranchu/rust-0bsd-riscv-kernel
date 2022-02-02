@@ -27,6 +27,8 @@ impl InodeHandleState {
         }
     }
     pub async fn read(&mut self, fs: &Ext2, buf: &mut [u8]) -> Result<usize> {
+        info!("Reading file: {} / {}", self.position, self.inode.size);
+
         let block_size: usize = fs.block_size() as usize;
 
         let mut position_in_buffer = 0;
@@ -75,8 +77,6 @@ impl InodeHandleState {
                 .await?;
             let destination_buffer = &mut block[current_block_offset..read_in_block_up_to];
 
-            println!("Bufs {:?} {:?}", destination_buffer, source_buffer);
-
             destination_buffer[position_in_buffer..position_in_buffer + source_buffer.len()]
                 .copy_from_slice(source_buffer);
             self.position += destination_buffer.len();
@@ -86,7 +86,6 @@ impl InodeHandleState {
                 .await?;
         }
 
-        println!("{:?}", self.inode);
         fs.write_inode(self.inode_number, &self.inode).await?;
 
         Ok(position_in_buffer)

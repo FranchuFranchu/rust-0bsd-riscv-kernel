@@ -1,5 +1,6 @@
 //! A function that runs when a trap happens
 
+use cpu::read_sp;
 pub use kernel_cpu::{clear_interrupt_context, in_interrupt_context, set_interrupt_context};
 pub use kernel_trap_frame::TrapFrame;
 
@@ -151,15 +152,19 @@ pub unsafe extern "C" fn trap_handler(
         read_sscratch().as_mut().unwrap().set_in_fault_trap();
         match cause {
             8 | 9 | 10 | 11 => {
-                info!("Environment call to us happened!");
+                debug!("Environment call to us happened!");
                 syscall::do_syscall(frame);
             }
             _ => {
                 error!(
-                    "Error with cause: {:?} pc: {:X} *pc: {:X} tval: {:X} mode: {}",
+                    "Error with cause: {:?} pc: {:X} *pc: {} tval: {:X} mode: {}",
                     cause,
                     unsafe { (*frame).pc },
-                    unsafe { *((*frame).pc as *const u32) },
+                    if (*frame).pc > 0x80000000 {
+                        alloc::format!("{:X}", unsafe { *((*frame).pc as *const u32) })
+                    } else {
+                        alloc::string::String::from("(reading might cause page fault)")
+                    },
                     unsafe { tval as *const u32 as usize },
                     if unsafe { read_sstatus() & 1 << 8 != 0 } {
                         "supervisor"

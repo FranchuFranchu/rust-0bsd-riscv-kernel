@@ -8,3 +8,6 @@ edition = "2021"
 [dependencies]
 kernel_as_register = { path = "../kernel_as_register" }
 kernel_syscall_abi = { path = "../kernel_syscall_abi" }
+flat-bytes = { path = "../flat_bytes/flat-bytes" }
+slab_allocator_rs = "1.0"
+spin = "*"

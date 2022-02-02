@@ -1,0 +1,20 @@
+[package]
+name = "flat-bytes-derive"
+version = "0.1.0"
+authors = ["bluec0re <coding@bluec0re.eu>"]
+edition = "2018"
+license = "Apache-2.0"
+repository = "https://github.com/bluec0re/threema-rs"
+homepage = "https://github.com/bluec0re/threema-rs"
+keywords = ["serializer"]
+description = "Derive macro for flat-bytes"
+
+[lib]
+proc-macro = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+syn = { version = "1.0", features = ["extra-traits", "full"] }
+quote = "1.0"
+proc-macro2 = "1.0"

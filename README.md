@@ -2,7 +2,9 @@
 
 Mostly 0BSD-licensed `RV64GC` and `RV32IMAC` Rust kernel for Qemu's `virt` machine
 
-Files not made by me (and possibly not 0BSD-licensed) are `src/asm/trap.S` and `src/allocator/linkedlist.rs`
+Files not made by me (and possibly not 0BSD-licensed) are `kernel/kernel_main/asm/trap.S` , `kernel/kernel_main/allocator/linkedlist.rs`, and `kernel/flat_bytes/`
+
+Build and run with `./build_userspace_and_run.sh`
 
 Stop QEMU with Ctrl-A and then X
 
@@ -14,7 +16,6 @@ Stop QEMU with Ctrl-A and then X
 - [X] Virtio
 - [X] Virtio block driver
 - [X] Refactor VirtioDevice interrupt API, so that instead of calling <interrupt handler> -> <VirtioDeviceType> -> <VirtioDevice> -> <Waker> -> <VirtioDeviceType>, it skips the first VirtioDeviceType step
-- [ ] Fix the changed_queue mess when VirtioDevice is used as a Future
 - [X] Fix bug where process trap frame would still be used after removing the process. This doesn't cause bugs until new allocations are made. (use-after-free)
 - [ ] Make the future.rs executor code cleaner
 - [X] Kernel locks for kernel interrupt contexts, mixed contexts, and thread contexts (just missing performant thread-only locks that use wakers)
@@ -23,9 +24,11 @@ Stop QEMU with Ctrl-A and then X
 
 ## Tips
 
-### Compiling `test_program`
+### On Performance
 
-Make sure to compile it in release mode to make the binary smaller. There seem to be some problems with loading large binaries large now
+I am not trying to achieve maximum performance for this kernel, and the kernel itself feels sluggish when doing many operations like reading a file from the disk. I thought that this slowdown might be because of the emulation. So I compared QEMU with this kernel's allocator and my own machine's performance when running a simple Sieve of Eratosthenes program (for all numbers from 0 to 10000). 
+
+On RISC-V the program ran in 17.840218 seconds. On my machine it ran in 1.064202 second. I don't think this completely explains the sluggishness when reading a file, so I'll have to measure I/O performance.
 
 ## Some explanations for parts of the code
 

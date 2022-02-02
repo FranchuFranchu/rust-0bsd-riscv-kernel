@@ -1,5 +1,7 @@
 #![no_std]
 
+extern crate alloc;
+
 use num_enum::*;
 #[repr(usize)]
 #[derive(IntoPrimitive, FromPrimitive, Debug)]
@@ -40,3 +42,6 @@ pub enum SyscallNumbers {
     #[num_enum(default)]
     Unknown,
 }
+
+pub mod directory_list;
+pub mod process_egg;

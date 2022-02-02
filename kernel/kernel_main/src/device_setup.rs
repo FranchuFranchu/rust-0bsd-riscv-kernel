@@ -14,6 +14,7 @@ use crate::{
     external_interrupt::ExternalInterruptHandler,
     fdt::PropertyValue,
     lock::shared::{Mutex, RwLock},
+    virtual_buffers::new_virtual_buffer,
 };
 
 /// Future that can be awaited to call the waker when device setup is done
@@ -86,8 +87,11 @@ pub fn setup_devices() {
         if let Some(PropertyValue::String(compatible_with)) = node.properties.get("compatible") {
             match compatible_with {
                 &"virtio,mmio" => {
-                    let mut virtio_device =
-                        unsafe { VirtioDevice::new(node.unit_address.unwrap_or(0) as _) };
+                    let mut virtio_device = unsafe {
+                        VirtioDevice::new(
+                            new_virtual_buffer(node.unit_address.unwrap_or(0), 0x1000) as _,
+                        )
+                    };
 
                     if virtio_device.is_present() {
                         use alloc::sync::Arc;

@@ -7,6 +7,7 @@ pub enum StandardHandleErrors {
 }
 
 #[async_trait]
+#[allow(where_clauses_object_safety)]
 pub trait HandleBackend {
     fn create_singleton() -> alloc::sync::Arc<dyn HandleBackend + Send + Sync + 'static>
     where

@@ -36,7 +36,6 @@ pub async fn open(
 ) -> Arc<dyn HandleBackend + Send + Sync + 'static> {
     let backend = {
         let lock = BACKEND_SINGLETONS.read();
-        println!("{:?}", backend_id);
         match lock.get(backend_id) {
             Some(backend) => {
                 let b = backend.clone();
@@ -49,12 +48,10 @@ pub async fn open(
                 BACKEND_SINGLETONS
                     .write()
                     .insert(*backend_id, backend.clone());
-                println!("{:?}", "waited");
                 backend
             }
         }
     };
-    println!("{:?}", backend.name());
     backend.open(fd_id, options).await;
     backend
 }

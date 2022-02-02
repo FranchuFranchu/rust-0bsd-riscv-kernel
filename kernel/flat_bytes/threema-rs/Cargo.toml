@@ -1,0 +1,35 @@
+[package]
+name = "threema"
+version = "0.1.4"
+authors = ["bluec0re <coding@bluec0re.eu>"]
+edition = "2018"
+license = "Apache-2.0"
+repository = "https://github.com/bluec0re/threema-rs"
+homepage = "https://github.com/bluec0re/threema-rs"
+keywords = ["threema", "bot"]
+description = "A threema.ch api library, based on o3ma"
+
+
+[dependencies]
+ureq = { version = "2.0.1", features = ["json"] }
+sodiumoxide = { version = "0.2", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+base64 = "0.13"
+rustls = { version = "0.19", features = ["dangerous_configuration"] }
+webpki = "0.21"
+webpki-roots = "0.21"
+pbkdf2 = { version = "0.8.0", default-features = false }
+hmac = "0.11.0"
+sha2 = "0.9"
+flat-bytes = { version = "0.1", path = "./flat-bytes" }
+log = "0.4"
+
+[dev-dependencies]
+pretty_env_logger = "0.4"
+
+[build-dependencies]
+webpki = "0.21"
+
+[workspace]
+members = ["flat-bytes", "flat-bytes-derive", "threema-cli"]

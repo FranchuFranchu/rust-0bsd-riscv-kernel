@@ -3,7 +3,7 @@
 use crate::{
     cpu,
     process::{ProcessState, PROCESS_SCHED_QUEUE},
-    timer_queue,
+    timeout, timer_queue,
 };
 
 // Return the next PID to be run
@@ -65,7 +65,7 @@ pub fn schedule() -> usize {
 pub fn schedule_next_slice(slices: u64) {
     use timer_queue::{schedule_at, TimerEvent, TimerEventCause::*};
     schedule_at(TimerEvent {
-        instant: cpu::get_time() + slices * 1_000_000,
+        instant: timeout::get_time() + slices * 1_000_000,
         cause: ContextSwitch,
     });
 }

@@ -172,7 +172,7 @@ pub fn fence_vma() {
 }
 
 /// This is provided by the CLINT
-const MMIO_MTIME: *const u64 = 0x0200_BFF8 as *const u64;
+pub const MMIO_MTIME: *const u64 = 0x0200_BFF8 as *const u64;
 
 pub fn get_time() -> u64 {
     unsafe { *MMIO_MTIME }
@@ -181,7 +181,8 @@ pub fn get_time() -> u64 {
 #[inline]
 pub fn in_interrupt_context() -> bool {
     // TODO make this sound (aliasing rules?)
-    unsafe { read_sscratch().as_ref().unwrap().is_interrupt_context() }
+    (read_sscratch() as usize == 0)
+        || unsafe { read_sscratch().as_ref().unwrap().is_interrupt_context() }
 }
 
 #[inline]
@@ -192,6 +193,18 @@ pub fn set_interrupt_context() {
 #[inline]
 pub fn clear_interrupt_context() {
     unsafe { (*read_sscratch()).flags &= !1 }
+}
+
+#[inline]
+pub fn is_paging_enabled() -> bool {
+    #[cfg(target_arch = "riscv32")]
+    {
+        ((read_satp() as u32) & (0x3 << 30)) != 0
+    }
+    #[cfg(target_arch = "riscv64")]
+    {
+        ((read_satp() as u64) & (0xF << 62)) != 0
+    }
 }
 
 // This module describes CSR bits and layouts

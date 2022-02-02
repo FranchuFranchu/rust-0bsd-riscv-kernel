@@ -14,6 +14,8 @@ use core::{
     task::{RawWaker, RawWakerVTable, Waker},
 };
 
+use cpu::read_time;
+
 use crate::{
     asm::do_supervisor_syscall_0,
     context_switch,
@@ -316,11 +318,7 @@ pub fn allocate_pid_lockfree(processes: &mut BTreeMap<usize, PidSlot>) -> usize 
 
 /// Creates a supervisor process and returns PID
 /// SAFETY: Only when function is a valid function pointer
-pub fn new_process_int(
-    function: usize,
-    a0: usize,
-    mut constructor: impl FnMut(&mut Process),
-) -> usize {
+pub fn new_process(mut constructor: impl FnOnce(&mut Process)) -> usize {
     // Hold this guard for as much time as possible
     // to prevent a race condition on allocate_pid
     let mut guard = PROCESSES.write();
@@ -338,15 +336,16 @@ pub fn new_process_int(
         name: None,
         no_op_yield_count: AtomicUsize::new(0),
     };
+
     constructor(&mut process);
 
-    // Set the initial state for the process
-    process.trap_frame.general_registers[Registers::A0.idx()] = a0;
-
-    process.trap_frame.pc = function;
     process.trap_frame.pid = pid;
-    process.trap_frame.hartid = 0xBADC0DE;
     process.trap_frame.use_current_satp_as_kernel_satp();
+    if process.is_supervisor {
+        process.trap_frame.satp = process.trap_frame.kernel_satp;
+    }
+    process.trap_frame.hartid = 0xBADC0DE;
+
     // Wrap the process in a lock
     let process = RwLock::new(process);
     // Move the process into an Arc
@@ -361,7 +360,7 @@ pub fn new_process_int(
 }
 
 pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
-    new_process_int(function, a0, |process| {
+    new_process(|process| {
         process.is_supervisor = true;
         process.trap_frame.general_registers[Registers::Ra.idx()] =
             process_return_address_supervisor as usize;
@@ -375,6 +374,9 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
         let process_stack = boxed_slice_with_alignment(TASK_STACK_SIZE, 4096, &0u8);
         process.trap_frame.general_registers[Registers::Sp.idx()] =
             process_stack.as_ptr() as usize + TASK_STACK_SIZE - 0x10;
+
+        process.trap_frame.general_registers[Registers::A0.idx()] = a0;
+        process.trap_frame.pc = function;
 
         use core::convert::TryInto;
         process.kernel_allocated_stack = Some(
@@ -444,6 +446,9 @@ pub fn weak_get_process(pid: &usize) -> Weak<RwLock<Process>> {
 // This assumes that the process exists and panics if it doesn't
 // Also acts as a strong reference to the process
 pub fn try_get_process(pid: &usize) -> Arc<RwLock<Process>> {
+    if *pid == 1 {
+        panic!("try_get_process: tried getting process 1! (the boot process)");
+    }
     PROCESSES
         .read()
         .get(pid)

@@ -8,6 +8,8 @@
 
 use kernel_cpu::load_hartid;
 
+use crate::virtual_buffers::new_virtual_buffer;
+
 #[inline(always)]
 fn get_context_number() -> usize {
     // From the PDF:
@@ -49,19 +51,18 @@ pub struct Plic0 {
 
 impl Plic0 {
     pub fn new_with_fdt() -> Self {
-        Self {
-            base_addr: crate::fdt::root()
+        Self::new_with_addr(
+            crate::fdt::root()
                 .read()
                 .get("soc/plic@")
                 .unwrap()
                 .unit_address
                 .unwrap(),
-            context_number: get_context_number(),
-        }
+        )
     }
     pub fn new_with_addr(base_addr: usize) -> Self {
         Self {
-            base_addr,
+            base_addr: new_virtual_buffer(base_addr, 0x200000 + (32 * 2) * 0x1000),
             context_number: get_context_number(),
         }
     }

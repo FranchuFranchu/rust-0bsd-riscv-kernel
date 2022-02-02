@@ -41,11 +41,15 @@ use core::{
 use process::PROCESSES;
 
 use crate::{
+    benchmark::time_fn,
     cpu::{load_hartid, read_sscratch},
     hart::get_hart_meta,
     paging::Paging,
     plic::Plic0,
     process::{delete_process, PidSlot},
+    sbi::shutdown,
+    timeout::get_time_setup,
+    virtual_buffers::new_virtual_buffer,
 };
 
 #[macro_use]
@@ -118,18 +122,22 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
     // Initialize the interrupt waker system
     interrupt_context_waker::init();
 
-    unsafe { println!("{:p}", &_stack_start) };
-
     // Setup paging
     // SAFETY: If identity mapping did its thing right, then nothing should change
     #[cfg(target_arch = "riscv64")]
     unsafe {
         cpu::write_satp(
             (&mut paging::ROOT_PAGE as *mut paging::Table as usize) >> 12 | cpu::csr::SATP_SV39,
-        )
+        );
+        BOOT_FRAME.satp = cpu::read_satp();
+        BOOT_FRAME.kernel_satp = cpu::read_satp();
     }
 
     cpu::fence_vma();
+
+    get_time_setup();
+
+    //let virt_buffer = new_virtual_buffer(0x1000_0000, 0x4096);
 
     //kernel_debugging::backtrace::backtrace();
     //kernel_debugging::pub_names::test();
@@ -173,8 +181,6 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
         sstatus |= 1 << 1 | 1 << 18;
         asm!("csrw sstatus, {0}" , in(reg) ( sstatus));
     }
-    let _tab = RootTable(unsafe { &mut paging::ROOT_PAGE });
-    //tab.map(0x20000000, 0x20001000, 0x200000, 15);
 
     use alloc::borrow::ToOwned;
     process::new_supervisor_process_with_name(test_task::test_task_3, "disk-test".to_owned());
@@ -188,10 +194,8 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
         "test-task-2".to_owned(),
     );*/
     unsafe { hart::start_all_harts(new_hart as usize) };
-
     scheduler::schedule_next_slice(0);
     timer_queue::schedule_next();
-
     loop {
         cpu::wfi();
     }
@@ -253,8 +257,6 @@ fn panic(info: &PanicInfo) -> ! {
     let message = info.message().unwrap_or(&fnomsg);
 
     let trap_frame = cpu::read_sscratch();
-
-    debug!("{:?}", trap_frame);
 
     // Check if trap frame is out of bounds (which means we can't read data from it)
     if (trap_frame as usize) > 0x80200000
@@ -323,6 +325,7 @@ pub mod interrupt_context_waker;
 pub use kernel_io as io;
 pub mod kernel_debugging;
 pub use kernel_lock as lock;
+pub mod benchmark;
 pub mod logger;
 pub mod paging;
 pub mod plic;

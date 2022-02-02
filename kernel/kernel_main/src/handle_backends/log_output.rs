@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 
-use crate::handle::HandleBackend;
+use crate::{handle::HandleBackend, std_macros::UART_ADDRESS};
 
 pub struct LogOutputHandleBackend {
     addr: usize,
@@ -22,11 +22,13 @@ impl HandleBackend for LogOutputHandleBackend {
     }
 
     async fn write(&self, _fd_id: &usize, buf: &[u8], _options: &[usize]) -> Result<usize, usize> {
-        let _t = unsafe {
-            crate::drivers::uart::Uart::new(self.addr)
-                .write_bytes(buf)
-                .unwrap()
-        };
+        print!("[userspace process] ");
+        unsafe { crate::std_macros::get_uart().write_bytes(buf).unwrap() };
+
+        // Make sure it ends in a newline
+        if buf.last() != None && *buf.last().unwrap() != 0xa {
+            println!();
+        }
         Ok(buf.len())
     }
 }

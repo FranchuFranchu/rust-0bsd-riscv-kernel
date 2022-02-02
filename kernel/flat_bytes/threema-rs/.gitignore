@@ -1,0 +1,6 @@
+/target
+/identity
+/threema-backup*
+*.sw[po]
+*~
+*.bak

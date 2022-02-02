@@ -5,13 +5,40 @@ use core::{
     task::{Poll, Waker},
 };
 
-use crate::{cpu, lock::shared::RwLock, timer_queue};
+use cpu::MMIO_MTIME;
+
+use crate::{
+    cpu,
+    lock::shared::RwLock,
+    paging::PAGE_ALIGN,
+    timer_queue,
+    virtual_buffers::{new_virtual_buffer, VirtualBuffer},
+};
 
 /// This Vec is sorted by item.0.for_time
 /// TODO use binary heap?
 pub static WAITING_TIMEOUTS: RwLock<Vec<(TimeoutFuture, Waker)>> = RwLock::new(Vec::new());
 
-//#[must_use = "Futures do nothing unless polled"]
+pub static MMIO_MTIME_VIRT_BUFFER_ADDR: RwLock<Option<usize>> = RwLock::new(None);
+
+// Uses a virt buffer, so it
+pub fn get_time_setup() {
+    let mmio_mtime_aligned = (MMIO_MTIME as usize) & !(PAGE_ALIGN - 1);
+
+    let virt = new_virtual_buffer(mmio_mtime_aligned, 0x1000);
+    println!("{:x}", virt + ((MMIO_MTIME as usize) & (PAGE_ALIGN - 1)));
+    *MMIO_MTIME_VIRT_BUFFER_ADDR.write() = Some(virt + ((MMIO_MTIME as usize) & (PAGE_ALIGN - 1)))
+}
+pub fn get_time() -> u64 {
+    unsafe {
+        match &*MMIO_MTIME_VIRT_BUFFER_ADDR.read() {
+            Some(a) => *((*a) as *const u64),
+            None => *MMIO_MTIME,
+        }
+    }
+}
+
+#[must_use = "Futures do nothing unless polled"]
 #[derive(Copy, Clone)]
 pub struct TimeoutFuture {
     pub for_time: u64,
@@ -24,8 +51,8 @@ impl Future for TimeoutFuture {
         self: core::pin::Pin<&mut Self>,
         cx: &mut core::task::Context<'_>,
     ) -> Poll<Self::Output> {
-        if cpu::get_time() >= self.for_time {
-            Poll::Ready(cpu::get_time())
+        if get_time() >= self.for_time {
+            Poll::Ready(get_time())
         } else {
             // Register the current task for wakeup
             // WAITING_TIMEOUTS gets checked during a time interrupt
@@ -80,6 +107,8 @@ pub fn on_timer_event(instant: u64) {
         // This would trigger a unused-future warning otherwise
         // because rustc isn't smart enough to realize that all futures before max_remove_index would have been woken up before being removed
         #[allow(unused_must_use)]
-        lock.remove(i);
+        {
+            lock.remove(i);
+        }
     }
 }

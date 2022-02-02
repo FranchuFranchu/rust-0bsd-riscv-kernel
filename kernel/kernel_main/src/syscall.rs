@@ -1,3 +1,4 @@
+use kernel_syscall_abi::*;
 use num_enum::{FromPrimitive, IntoPrimitive};
 
 use crate::{
@@ -8,16 +9,14 @@ use crate::{
     test_task::boxed_slice_with_alignment,
     trap_frame::{TrapFrame, TrapFrameExt},
     trap_future_executor::block_and_return_to_userspace,
+    virtual_buffers,
 };
-
-use kernel_syscall_abi::*;
 
 pub fn do_syscall(frame: *mut TrapFrame) {
     // First, assume that the frame is a valid pointer
     // (this may break aliasing rules though!)
     let frame_raw = frame;
     let frame = unsafe { frame_raw.as_mut().unwrap_unchecked() };
-
     let number = SyscallNumbers::from(frame.general_registers[Registers::A7.idx()]);
     frame.pc += 4;
     unsafe { write_satp(frame.satp) };
@@ -31,23 +30,62 @@ pub fn do_syscall(frame: *mut TrapFrame) {
         }
         AllocPages => {
             let virtual_address = frame.general_registers[Registers::A0.idx()];
-            let size = frame.general_registers[Registers::A1.idx()];
-            let size = size.unstable_div_ceil(4096) * 4096;
-            let flags = frame.general_registers[Registers::A2.idx()];
-            let _paging_flags = flags & EntryBits::RWX;
+            let physical_addr = frame.general_registers[Registers::A1.idx()];
+            let size = frame.general_registers[Registers::A2.idx()];
+            let mut flags = frame.general_registers[Registers::A3.idx()];
+            flags = (flags & !EntryBits::ADDRESS_MASK) | EntryBits::USER;
 
             // TODO fix aliasing issues!
             let mut root_table = unsafe { frame.satp_as_sv39_root_table() };
-            let new_pages = boxed_slice_with_alignment(size, 4096, &0);
+
+            let physical_addr = if physical_addr == usize::MAX {
+                let new_pages = boxed_slice_with_alignment(size, 4096, &0u8);
+                let physical_addr = &new_pages[0] as *const u8 as usize;
+                core::mem::forget(new_pages);
+                physical_addr
+            } else {
+                unimplemented!(
+                    "Mapping virtual address space to phyisical address space provided by user"
+                )
+                // Some(physical_addr)
+            };
+
+            let virtual_address = if virtual_address == usize::MAX {
+                // Find a free set of contiguous pages
+                let mut run_length = 0;
+                let mut first_page_in_set = None;
+                for i in (0x1000..0x80000000).step_by(4096) {
+                    if let Some(page) = unsafe { root_table.query(i) } {
+                        // This page is used
+                        if page & EntryBits::USER != 0 {
+                            run_length = 0;
+                            continue;
+                        }
+                    }
+
+                    // This page is free and unmapped
+                    if run_length >= size {
+                        first_page_in_set = Some(i - run_length);
+                        break;
+                    }
+                    run_length += 4096;
+                }
+                first_page_in_set.expect("No free page found!")
+            } else {
+                virtual_address
+            };
+
+            let size = size.unstable_div_ceil(4096) * 4096;
+            let paging_flags = flags & EntryBits::RWX;
 
             root_table.map(
-                &new_pages[0] as *const _ as usize,
+                physical_addr,
                 virtual_address,
                 size,
-                flags | EntryBits::VALID | EntryBits::USER,
+                paging_flags | EntryBits::VALID | EntryBits::USER,
             );
             core::mem::forget(root_table);
-            core::mem::forget(new_pages);
+            frame.general_registers[Registers::A0.idx()] = virtual_address;
         }
         FreePages => {}
 
@@ -70,10 +108,8 @@ pub fn do_syscall(frame: *mut TrapFrame) {
                     .map(|s| s.0 + 1)
                     .unwrap_or(1);
 
-                println!("{:?}", "will wait");
                 let backend_instance =
                     crate::handle_backends::open(&id, &new_fd_number, options).await;
-                println!("{:?}", backend_instance.name());
                 core::mem::forget(backend_instance.clone());
                 process.write().handles.insert(
                     new_fd_number,
@@ -104,7 +140,7 @@ pub fn do_syscall(frame: *mut TrapFrame) {
 
                 let options =
                     &frame.general_registers[Registers::A3.idx()..Registers::A7.idx() + 1];
-                println!("{:?}", id);
+
                 let backend = {
                     let process = crate::process::try_get_process(&frame.pid);
                     let process = process.write();
@@ -138,12 +174,17 @@ pub fn do_syscall(frame: *mut TrapFrame) {
                     let process = process.write();
                     process.handles[&id].backend.upgrade()
                 };
-                backend
-                    .as_ref()
-                    .unwrap()
-                    .read(&id, buf, options)
-                    .await
-                    .unwrap();
+                let result = backend.as_ref().unwrap().read(&id, buf, options).await;
+                match result {
+                    Ok(o) => {
+                        frame.general_registers[Registers::A0.idx()] = o;
+                        frame.general_registers[Registers::A1.idx()] = 0;
+                    }
+                    Err(e) => {
+                        frame.general_registers[Registers::A0.idx()] = usize::MAX;
+                        frame.general_registers[Registers::A1.idx()] = e;
+                    }
+                }
             };
             block_and_return_to_userspace(current_pid, alloc::boxed::Box::pin(fut));
         }

@@ -1,9 +1,12 @@
 use crate::{
     lock::shared::RwLock,
-    paging::EntryBits::{RWX, VALID},
+    paging::{
+        EntryBits::{RWX, VALID},
+        Paging,
+    },
 };
 
-#[derive(Eq, PartialEq, Ord)]
+#[derive(Eq, PartialEq, Ord, Debug)]
 pub struct VirtualBuffer {
     virt_addr: usize,
     phys_addr: usize,
@@ -13,7 +16,9 @@ pub struct VirtualBuffer {
 impl PartialOrd for VirtualBuffer {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         debug_assert!(self.virt_start() != other.virt_start());
-        self.virt_start().partial_cmp(&other.virt_start())
+        self.virt_start()
+            .partial_cmp(&other.virt_start())
+            .map(core::cmp::Ordering::reverse)
     }
 }
 
@@ -66,7 +71,7 @@ impl VirtualBufferRegistry {
             let mut insert_into = None;
 
             for (_idx, (current, next)) in iter1.zip(iter2).enumerate() {
-                if (next.virt_start() - current.virt_end()) < size {
+                if (next.virt_start() - current.virt_end()) > size {
                     // This buffer fits in here
                     insert_into = Some(current.virt_end())
                 }
@@ -74,11 +79,7 @@ impl VirtualBufferRegistry {
             if let Some(insert_into) = insert_into {
                 insert_into
             } else if self.buffers.len() > 0 {
-                self.buffers
-                    .iter()
-                    .nth(self.buffers.len() - 1)
-                    .unwrap()
-                    .virt_end()
+                self.buffers.iter().rev().next().unwrap().virt_end()
             } else {
                 self.free_space_start
             }
@@ -117,3 +118,10 @@ pub fn new_virtual_buffer(phys_addr: usize, size: usize) -> usize {
 }
 
 // &_free_space_start as *const _ as usize
+
+pub fn initialize_root_table<Table: Paging>(table: &mut Table) {
+    table.map(0x80000000, 0x80000000, 0x80000000, VALID | RWX);
+    for i in MAIN_REGISTRY.read().as_ref().unwrap().buffers.iter() {
+        table.map(i.phys_addr, i.virt_addr, i.size, VALID | RWX);
+    }
+}

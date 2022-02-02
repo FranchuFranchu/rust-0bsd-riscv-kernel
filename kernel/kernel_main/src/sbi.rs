@@ -136,7 +136,7 @@ pub fn set_absolute_timer(time: u64) -> Result<(), SBIError> {
 }
 
 pub fn set_relative_timer(time: u64) -> Result<(), SBIError> {
-    set_absolute_timer(crate::cpu::get_time() + time)
+    set_absolute_timer(crate::timeout::get_time() + time)
 }
 
 pub fn shutdown(reason: usize) {

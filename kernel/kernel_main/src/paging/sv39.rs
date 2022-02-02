@@ -89,6 +89,29 @@ impl<'a> Paging for RootTable<'a> {
 
         //info!("entry");
     }
+    unsafe fn query(&self, virtual_addr: usize) -> Option<usize> {
+        let vpn2 = (virtual_addr >> 30) & (ENTRY_COUNT - 1);
+        let vpn1 = (virtual_addr >> 21) & (ENTRY_COUNT - 1);
+        let vpn0 = (virtual_addr >> 12) & (ENTRY_COUNT - 1);
+        let table = &self.0;
+        if let Some(table) = table[vpn2].try_as_table() {
+            if let Some(table) = table[vpn1].try_as_table() {
+                if table[vpn0].value & EntryBits::VALID == 0 {
+                    None
+                } else {
+                    Some((table[vpn0].value))
+                }
+            } else if table[vpn1].value & EntryBits::VALID == 0 {
+                None
+            } else {
+                Some((table[vpn1].value) + vpn0)
+            }
+        } else if table[vpn2].value & EntryBits::VALID == 0 {
+            None
+        } else {
+            Some((table[vpn2].value) + vpn0 + vpn1 * ENTRY_COUNT)
+        }
+    }
     fn identity_map(&mut self) {
         for (idx, i) in (self.0.entries).iter_mut().enumerate() {
             i.value = EntryBits::VALID | EntryBits::RWX | (GIGAPAGE_SIZE / 4 * idx);

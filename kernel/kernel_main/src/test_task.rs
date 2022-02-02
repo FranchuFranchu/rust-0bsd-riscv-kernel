@@ -17,8 +17,11 @@ use crate::{
     drivers::{traits::block::GenericBlockDevice, virtio::VirtioDriver},
     external_interrupt::ExternalInterruptHandler,
     fdt,
-    paging::{EntryBits, Paging},
-    process,
+    paging::{
+        EntryBits::{self, RWX, VALID},
+        Paging,
+    },
+    process, timeout, virtual_buffers,
 };
 
 // random-ish function I just made up
@@ -106,7 +109,7 @@ pub fn test_task_2() {
     use crate::timeout::TimeoutFuture;
     // On QEMU, 10_000_000 timebase is 1 second
     let mut future = TimeoutFuture {
-        for_time: cpu::get_time() + 10_000_000,
+        for_time: timeout::get_time() + 10_000_000,
     };
     let waker = process::Process::this().write().construct_waker();
     use core::future::Future;
@@ -126,7 +129,6 @@ pub fn test_task_2() {
 
 pub fn test_task_3() {
     {
-        info!("Waiting");
         use crate::lock::shared::Mutex;
 
         let m = Mutex::new(0);
@@ -143,9 +145,7 @@ pub fn test_task_3() {
     let _exec = crate::future::Executor::new();
     let block = async {
         // First, wait until the device setup is done
-        info!("Waiting");
         crate::device_setup::is_done_future().await;
-        info!("Waited");
         // Get the block device
 
         let block_device: Arc<RwLock<dyn GenericBlockDevice + Send + Sync + Unpin>> = {
@@ -165,47 +165,16 @@ pub fn test_task_3() {
             block_device.clone()
         };
 
-        /*
-        let mut v: Vec<u8> = Vec::new();
-        v.resize(512, 0);
-
-        v[0] = 65;
-        v[1] = 67;
-
-        //println!("Write: {:?}", v);
-
-        let request = block_device
-            .lock()
-            .create_request(0, v.into_boxed_slice(), true);
-
-        let buf = request.await;
-        info!("Read {:?}", buf);
-
-        let mut v: Vec<u8> = Vec::new();
-        v.resize(512, 0);
-
-        // Read the block again
-        let request = block_device
-            .lock()
-            .create_request(0, v.into_boxed_slice(), false);
-
-        let buf = request.await;
-        */
-
         use crate::filesystem::ext2::code::Ext2;
 
         let ext2 = Ext2::new(&block_device);
 
         ext2.load_superblock().await.unwrap();
 
-        info!("{:?}", ext2.read_inode(2).await.unwrap());
+        // Read large file
 
         let inode = ext2.get_path("/writeable-file.txt").await.unwrap().unwrap();
-        println!(
-            "INODE {:?} {:?}",
-            inode,
-            ext2.read_inode(inode).await.unwrap()
-        );
+
         let mut handle = ext2.inode_handle(inode).await.unwrap();
         handle.write("Jello warla".as_bytes()).await.unwrap();
 
@@ -215,30 +184,39 @@ pub fn test_task_3() {
         let t = handle.read_to_end_new().await.unwrap();
         let mut new_page_table = Box::new(crate::paging::Table::zeroed());
 
+        info!("Read /main program");
+
         let mut root_table = crate::paging::sv39::RootTable(&mut new_page_table);
 
-        root_table.identity_map();
+        virtual_buffers::initialize_root_table(&mut root_table);
+
+        //root_table.identity_map();
+        root_table.map(0x80000000, 0x80000000, 0x80000000, VALID | RWX);
 
         let elf_file = elf_rs::Elf::from_bytes(&t.1);
         let mut allocated_segments = Vec::new();
         if let elf_rs::Elf::Elf64(e) = elf_file.unwrap() {
-
             for p in e.program_header_iter() {
                 if p.ph.memsz() as usize == 0 {
-                    continue
+                    continue;
                 }
-                // This is our buffer with the program's code
                 use core::convert::TryInto;
-                let page_offset: usize = (p.ph.vaddr() - p.ph.vaddr().unstable_div_floor(4096) * 4096).try_into().unwrap();
-                let mut segment = boxed_slice_with_alignment(p.ph.memsz() as usize + page_offset, 4096, &0u8);
-                info!("{:x} {:x}", p.ph.vaddr(), p.ph.vaddr() + p.ph.memsz());
+                let page_offset: usize = (p.ph.vaddr()
+                    - p.ph.vaddr().unstable_div_floor(4096) * 4096)
+                    .try_into()
+                    .unwrap();
+                // This is our buffer with the program's data for this segment
+                let mut segment =
+                    boxed_slice_with_alignment(p.ph.memsz() as usize + page_offset, 4096, &0u8);
+
                 // Copy segment to buffer
                 segment[page_offset..page_offset + p.segment().len()].copy_from_slice(p.segment());
                 let start = p.ph.vaddr();
                 let end = start + p.ph.memsz();
                 let start = start.unstable_div_floor(4096) * 4096;
                 let end = end.unstable_div_ceil(4096) * 4096;
-                //root_table.map(&segment[0] as *const u8 as usize, p.ph.vaddr() as usize, (p.ph.memsz() as usize).max(4096), EntryBits::EXECUTE | EntryBits::VALID | EntryBits::READ);
+
+                // Map buffer to process's address space
                 root_table.map(
                     &segment[0] as *const u8 as usize,
                     start.try_into().unwrap(),
@@ -261,17 +239,11 @@ pub fn test_task_3() {
                 allocated_segments.push(segment);
             }
 
-            for _s in e.section_header_iter() {
-                //println!("{:x?}", s);
-            }
+            for _s in e.section_header_iter() {}
 
             let _s = e.lookup_section(".text");
-            //println!("s {:?}", s);
 
-            //println!("{:?}", allocated_segments);
-
-            process::new_process_int(e.header().entry_point() as usize, 0, |process| {
-                //crate::paging::map_critical_kernel_address_space(&mut root_table, &*process.trap_frame as *const _ as usize);
+            process::new_process(|process| {
                 // Create a buffer with the program's stack
                 let program_stack = boxed_slice_with_alignment(4096, 4096, &0u8);
                 root_table.map(
@@ -281,11 +253,14 @@ pub fn test_task_3() {
                     EntryBits::VALID | EntryBits::READ | EntryBits::WRITE | EntryBits::USER,
                 );
                 process.trap_frame.general_registers[Registers::Sp.idx()] = 0x40800;
+                process.trap_frame.pc = e.header().entry_point() as usize;
                 core::mem::forget(program_stack);
                 process.is_supervisor = false;
                 process.trap_frame.satp = (&*root_table.0 as *const crate::paging::Table as usize)
                     >> 12
                     | cpu::csr::SATP_SV39;
+
+                info!("Created process for /main program");
             });
         };
         core::mem::forget(allocated_segments);
@@ -306,8 +281,6 @@ pub fn test_task_3() {
     while core::task::Poll::Pending == Pin::new(&mut block).poll(&mut context) {
         unsafe { do_supervisor_syscall_0(2) };
     }
-
-    info!("Ending");
 }
 
 #[inline]

@@ -7,12 +7,14 @@ edition = "2018"
 [dependencies]
 bitflags = "1.0"
 volatile-register = "0.2"
+cstr_core = "0.2"
+aligned = "0.3"
 num_enum = {version = "0.5", default-features = false}
 log = "0.4"
 itertools = {version = "0.10", default-features = false}
-cstr_core = "0.2"
-aligned = "0.3"
-kernel_as_register_macro = { path = "../kernel_as_register_macro" }
+serde = { version = "1", default-features = false, features = ["alloc"]}
+serde_derive = "*"
+bincode = {default-features = false, features = ["derive", "atomic"]}
 slab_allocator_rs = "1"
 zerocopy = "*"
 spin = {features = ["lock_api"]}
@@ -23,8 +25,10 @@ lock_api = {version = "0.4", features = ["nightly"]}
 elf_rs = "0.1"
 smallvec = "*"
 gimli = { default-features = false, features = ["read"]}
+flat-bytes = { path = "../flat_bytes/flat-bytes" }
 
 kernel_as_register = { path = "../kernel_as_register"}
+kernel_as_register_macro = { path = "../kernel_as_register_macro" }
 kernel_io = { path = "../kernel_io" }
 kernel_cpu = { path = "../kernel_cpu" }
 kernel_lock = { path = "../kernel_lock" }

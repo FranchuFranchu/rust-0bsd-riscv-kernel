@@ -7,4 +7,6 @@ edition = "2021"
 
 
 [dependencies]
-kernel_api = { path = "../../src/kernel_api" }
+kernel_api = { path = "../../kernel/kernel_api" }
+flat-bytes = { path = "../../kernel/flat_bytes/flat-bytes" }
+elf_rs = "0.1"

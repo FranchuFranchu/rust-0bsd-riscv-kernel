@@ -174,7 +174,7 @@ impl Ext2 {
                     .unwrap(); // If this panics it means that there were actually no free blocks here and free_blocks_count was wrong.
 
                 let block_number = block_group_number
-                    * self.superblock.write().as_ref().unwrap().blocks_per_group
+                    * self.superblock.read().as_ref().unwrap().blocks_per_group
                     + block_number as u32;
 
                 // TODO prevent panics for incorrect block group metadata
@@ -213,7 +213,7 @@ impl Ext2 {
                     .unwrap(); // If this panics it means that there were actually no free blocks here and free_blocks_count was wrong.
 
                 let inode_number = block_group_number
-                    * self.superblock.write().as_ref().unwrap().inodes_per_group
+                    * self.superblock.read().as_ref().unwrap().inodes_per_group
                     + inode_number as u32
                     + 1;
 
@@ -289,7 +289,7 @@ impl Ext2 {
     }
 
     pub async fn get_inode_block(&self, inode: &Inode, block: u32) -> Result<u32> {
-        if block <= 12 {
+        if block < 12 {
             // Direct block
             Ok(inode.block[block as usize])
         } else if (block >= 12) && (block <= (12 + self.block_size() / 4)) {
@@ -301,9 +301,7 @@ impl Ext2 {
             let (begin, u32_slice, end) = unsafe { u8_slice.align_to::<u32>() };
             assert!(begin.is_empty());
             assert!(end.is_empty());
-            let a = u32_slice[(block - 13) as usize];
-            println!("{:?}", block);
-            println!("{:?}", a);
+            let a = u32_slice[(block - 12) as usize];
             Ok(a)
         } else {
             todo!("Very large file!")
@@ -407,7 +405,7 @@ impl Ext2 {
             let entry = unsafe { (buf.as_ptr() as *const DirectoryEntry).as_ref().unwrap() };
 
             let this_name = unsafe { core::str::from_utf8(entry.get_name()).unwrap() };
-            println!("{:?} {:?} {:?}", name, this_name, entry.inode);
+
             if this_name == name {
                 return Ok(Some(OwnedDirectoryEntry::from((entry, this_name))));
             }
@@ -480,10 +478,10 @@ impl Ext2 {
     pub async fn load_superblock(&self) -> Result<()> {
         let superblock: Box<[u8]> = GenericBlockDeviceExt::read(&*self.device, 2, 512 * 2).await?;
         let mut guard = self.superblock.write();
-
         // SAFETY: There are no illegal values for struct Superblock since it's repr C
         // and the superblock will not have data outside of allocated memory
         assert!(superblock.len() >= core::mem::size_of::<Superblock>());
+        assert!((&superblock[0] as *const _ as usize) % core::mem::align_of_val(&*superblock) == 0);
         // assert!(core::mem::size_of::<Box<[u8]>>() == core::mem::size_of::<Box<Superblock>>());
         let superblock: Box<Superblock> =
             unsafe { Box::from_raw(Box::into_raw(superblock) as *mut Superblock) };

@@ -271,14 +271,14 @@ impl SplitVirtqueue {
     fn free_descriptor(&mut self, descriptor: u16) {
         self.get_descriptor_mut(descriptor).address = 0
     }
-    
+
     fn free_descriptor_chain(&mut self, mut descriptor: u16) {
         let mut descriptor = self.get_descriptor_mut(descriptor);
         while descriptor.next != 0 {
             descriptor.address = 0;
             let next = descriptor.next;
             descriptor = self.get_descriptor_mut(next);
-        };
+        }
         descriptor.address = 0;
     }
 

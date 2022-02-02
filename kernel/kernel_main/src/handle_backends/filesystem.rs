@@ -4,7 +4,7 @@ use crate::{
     drivers::{traits::block::GenericBlockDevice, virtio::VirtioDriver},
     external_interrupt::ExternalInterruptHandler,
     fdt,
-    filesystem::ext2::{Ext2, InodeHandleState},
+    filesystem::ext2::{inode_handle, Ext2, InodeHandleState},
     handle::HandleBackend,
     lock::shared::RwLock,
 };
@@ -51,13 +51,9 @@ impl<'this> HandleBackend for FilesystemHandleBackend {
 
         self.block_device.load_superblock().await.unwrap();
 
-        info!("Opening file: {:?}", filename);
+        let f = self.block_device.get_path(filename).await.unwrap().unwrap();
 
-        let h = self
-            .block_device
-            .inode_handle_state(self.block_device.get_path(filename).await.unwrap().unwrap())
-            .await
-            .unwrap();
+        let h = self.block_device.inode_handle_state(f).await.unwrap();
 
         self.handle_inodes.write().await.insert(*fd_id, h);
     }
@@ -76,11 +72,11 @@ impl<'this> HandleBackend for FilesystemHandleBackend {
         _options: &[usize],
     ) -> Result<usize, usize> {
         let mut inode_handle = self.handle_inodes.write().await;
-        inode_handle
+        Ok(inode_handle
             .get_mut(fd_id)
             .unwrap()
             .read(&self.block_device, buf)
-            .await;
-        Ok(0)
+            .await
+            .unwrap())
     }
 }

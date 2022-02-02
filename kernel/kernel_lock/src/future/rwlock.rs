@@ -103,6 +103,14 @@ impl<T> AsyncRwLock<T> {
         }
         self.lock.wakers.lock().clear();
     }
+
+    pub fn get_mut(&mut self) -> &mut T {
+        self.value.get_mut()
+    }
+
+    pub fn into_inner(self) -> T {
+        self.value.into_inner()
+    }
 }
 
 pub struct AsyncRwLockWriteGuard<'rwlock, T> {

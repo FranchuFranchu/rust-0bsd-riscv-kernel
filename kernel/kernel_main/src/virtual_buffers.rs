@@ -91,9 +91,9 @@ impl VirtualBufferRegistry {
         };
         use core::ops::Mul;
         root_table.map(
-            phys_addr.unstable_div_floor(4096).mul(4096),
+            phys_addr.div_floor(4096).mul(4096),
             buf_virtual_address,
-            size.unstable_div_ceil(4096).mul(4096),
+            size.div_ceil(4096).mul(4096),
             RWX | VALID,
         );
 

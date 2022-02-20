@@ -5,20 +5,21 @@ use flat_bytes::Flat;
 #[derive(Flat)]
 #[repr(u8)]
 pub enum DirectoryWritePacketHeader {
-    Create, // Followed by directory entry
-    Delete, // Followed by name
+    Create(DirectoryEntry),
+    Delete(String),
 }
 
 #[derive(Flat)]
 pub struct DirectoryEntry {
-    name: String,
-    attributes: Vec<DirectoryAttribute>,
+    pub name: String,
+    pub attributes: Vec<DirectoryAttribute>,
 }
 
 #[derive(Flat)]
 #[repr(u8)]
 pub enum DirectoryAttribute {
     PermissionFlags(PermissionFlags),
+    Inode(u64),
 }
 
 type PermissionFlags = u8;

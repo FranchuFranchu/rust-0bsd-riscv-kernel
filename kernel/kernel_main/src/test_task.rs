@@ -3,6 +3,7 @@
 
 use alloc::{alloc::Layout, collections::BTreeSet, vec::Vec};
 use core::{
+    arch::asm,
     mem::{size_of, MaybeUninit},
     ops::{BitAnd, BitXor},
     pin::Pin,
@@ -201,8 +202,7 @@ pub fn test_task_3() {
                     continue;
                 }
                 use core::convert::TryInto;
-                let page_offset: usize = (p.ph.vaddr()
-                    - p.ph.vaddr().unstable_div_floor(4096) * 4096)
+                let page_offset: usize = (p.ph.vaddr() - p.ph.vaddr().div_floor(4096) * 4096)
                     .try_into()
                     .unwrap();
                 // This is our buffer with the program's data for this segment
@@ -213,8 +213,8 @@ pub fn test_task_3() {
                 segment[page_offset..page_offset + p.segment().len()].copy_from_slice(p.segment());
                 let start = p.ph.vaddr();
                 let end = start + p.ph.memsz();
-                let start = start.unstable_div_floor(4096) * 4096;
-                let end = end.unstable_div_ceil(4096) * 4096;
+                let start = start.div_floor(4096) * 4096;
+                let end = end.div_ceil(4096) * 4096;
 
                 // Map buffer to process's address space
                 root_table.map(
@@ -238,10 +238,6 @@ pub fn test_task_3() {
                 );
                 allocated_segments.push(segment);
             }
-
-            for _s in e.section_header_iter() {}
-
-            let _s = e.lookup_section(".text");
 
             process::new_process(|process| {
                 // Create a buffer with the program's stack

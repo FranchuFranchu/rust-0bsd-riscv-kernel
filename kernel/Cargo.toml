@@ -2,6 +2,10 @@
 members = [
 	"kernel_io",
 	"kernel_as_register",
+	"kernel_error_macro",
+	"kernel_lock",
 	"kernel_as_register_macro",
 	"kernel_main",
+	"kernel_api",
+	"kernel_syscall_abi",
 ]

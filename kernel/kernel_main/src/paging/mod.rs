@@ -195,11 +195,9 @@ extern "C" {
 
 /// Map the trap and switch to user/supervisor frame functions, which are the ones that change SATP to change contexts
 pub fn map_critical_kernel_address_space(table: &mut impl Paging, trap_frame: usize) {
-    let start =
-        unsafe { &critical_code_start as *const c_void as usize }.unstable_div_floor(4096) * 4096;
+    let start = unsafe { &critical_code_start as *const c_void as usize }.div_floor(4096) * 4096;
 
-    let end =
-        unsafe { &critical_code_end as *const c_void as usize }.unstable_div_ceil(4096) * 4096;
+    let end = unsafe { &critical_code_end as *const c_void as usize }.div_ceil(4096) * 4096;
     table.map(
         start,
         start,

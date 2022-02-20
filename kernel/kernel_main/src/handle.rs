@@ -1,6 +1,10 @@
 use alloc::{boxed::Box, sync::Weak};
 use core::{fmt::Debug, num::NonZeroUsize};
 
+use kernel_as_register::EncodedError;
+
+use crate::handle_backends::call_as_register_function;
+
 #[repr(usize)]
 pub enum StandardHandleErrors {
     Unimplemented = 1,
@@ -13,27 +17,46 @@ pub trait HandleBackend {
     where
         Self: Sized;
 
-    async fn open(&self, id: &usize, options: &[usize]);
+    async fn open(&self, id: &usize, options: &[usize]) -> Result<usize, EncodedError>;
 
     fn name(&self) -> &'static str;
 
-    async fn read(&self, _id: &usize, _buf: &mut [u8], _options: &[usize]) -> Result<usize, usize> {
-        Err(StandardHandleErrors::Unimplemented as usize)
+    async fn read(
+        &self,
+        _id: &usize,
+        _buf: &mut [u8],
+        _options: &[usize],
+    ) -> Result<usize, EncodedError> {
+        call_as_register_function(async || Err(StandardHandleErrors::Unimplemented as usize)).await
     }
-    async fn write(&self, _id: &usize, _buf: &[u8], _options: &[usize]) -> Result<usize, usize> {
-        Err(StandardHandleErrors::Unimplemented as usize)
+    async fn write(
+        &self,
+        _id: &usize,
+        _buf: &[u8],
+        _options: &[usize],
+    ) -> Result<usize, EncodedError> {
+        call_as_register_function(async || Err(StandardHandleErrors::Unimplemented as usize)).await
     }
     async fn size_hint(&self, _id: &usize, _options: &[usize]) -> (usize, Option<usize>) {
         (0, None)
     }
-    async fn seek(&self, _id: &usize, _position: &usize, _options: &[usize]) -> Result<(), usize> {
-        Err(StandardHandleErrors::Unimplemented as usize)
+    async fn seek(
+        &self,
+        _id: &usize,
+        _position: &usize,
+        _options: &[usize],
+    ) -> Result<usize, EncodedError> {
+        call_as_register_function(async || Err(StandardHandleErrors::Unimplemented as usize)).await
     }
-    async fn tell(&self, _id: &usize, _options: &[usize]) -> Result<usize, usize> {
-        Err(StandardHandleErrors::Unimplemented as usize)
+    async fn tell(&self, _id: &usize, _options: &[usize]) -> Result<usize, EncodedError> {
+        call_as_register_function(async || Err(StandardHandleErrors::Unimplemented as usize)).await
     }
     async fn split(&self, _id: &usize, _options: &[usize]) -> Option<NonZeroUsize> {
         None
+    }
+
+    fn close(&self, _id: &usize, options: &[usize]) -> Result<(), EncodedError> {
+        Ok(())
     }
 }
 

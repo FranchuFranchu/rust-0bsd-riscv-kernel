@@ -1,5 +1,4 @@
 //! Creating, switching to, and other functions related to process management (both kernel and user)
-
 use alloc::{
     boxed::Box,
     collections::BTreeMap,
@@ -8,6 +7,7 @@ use alloc::{
     vec::Vec,
 };
 use core::{
+    arch::asm,
     future::Future,
     pin::Pin,
     sync::atomic::AtomicUsize,

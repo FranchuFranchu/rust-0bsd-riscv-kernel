@@ -81,7 +81,6 @@ pub unsafe extern "C" fn trap_handler(
     set_interrupt_context();
     debug!("Trap from PID {:x}", unsafe { (*frame).pid });
     debug!("\x1b[1;35mV ENTER TRAP\x1b[0m");
-
     interrupt_context_waker::wake_all();
     if is_interrupt {
         match cause {

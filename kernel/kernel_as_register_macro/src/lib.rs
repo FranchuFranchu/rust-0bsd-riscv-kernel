@@ -1,9 +1,11 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
+use proc_macro_error::{abort, proc_macro_error};
 use quote::quote;
 use syn::{parse_macro_input, visit_mut::VisitMut, Data, DeriveInput, Variant};
 
+#[proc_macro_error]
 #[proc_macro_derive(AsRegister)]
 pub fn derive_as_register(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -18,11 +20,18 @@ pub fn derive_as_register(input: TokenStream) -> TokenStream {
 
     let ident = input.ident;
 
+    if enum_data.variants.len() == 0 {
+        abort!(
+            enum_data.brace_token.span,
+            "Can't derive AsRegister for a variantless enum!"
+        )
+    }
+
     let recursive_variant_count = &struc.recursive_variant_count;
     let as_register_code = &struc.as_register_code;
     let from_register_code = &struc.from_register_code;
     quote! {
-        impl AsRegister for #ident {
+        impl ::kernel_as_register::AsRegister for #ident {
             fn recursive_variant_count() -> usize {
                 #(#recursive_variant_count)+* + 0
             }
@@ -33,7 +42,7 @@ pub fn derive_as_register(input: TokenStream) -> TokenStream {
             }
             fn from_register(variant_extra: &(usize, &[usize])) -> Self {
                 #from_register_code
-                panic!("Register is out of bounds!")
+                panic!("Register {} is out of bounds!", variant_extra.0)
             }
         }
     }

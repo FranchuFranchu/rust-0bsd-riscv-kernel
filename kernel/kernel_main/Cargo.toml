@@ -34,6 +34,9 @@ kernel_cpu = { path = "../kernel_cpu" }
 kernel_lock = { path = "../kernel_lock" }
 kernel_trap_frame = { path = "../kernel_trap_frame" }
 kernel_syscall_abi = { path = "../kernel_syscall_abi" }
+kernel_error_macro = { path = "../kernel_error_macro" }
+# has no-std support
+snafu = { default-features = false }
 
 [profile.dev]
 opt-level = 0

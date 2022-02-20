@@ -1,5 +1,6 @@
 //! Abstractions over the RISC-V Supervisor Binary Interface to communicate with M-mode code
 // See https://github.com/riscv/riscv-sbi-doc/blob/master/riscv-sbi.adoc
+use core::arch::asm;
 
 #[repr(isize)]
 #[derive(Debug)]
@@ -152,7 +153,6 @@ pub unsafe fn start_hart(hartid: usize, start_addr: usize, opaque: usize) -> Res
     call_sbi_3(0x48534D, 0, hartid, start_addr, opaque).map(|_| {})
 }
 
-/// Safety: Only if start_addr is an address capable of bootstrapping himself
 pub fn hart_get_status(hartid: usize) -> Result<usize, SBIError> {
     unsafe { call_sbi_1(0x48534D, 2, hartid) }
 }

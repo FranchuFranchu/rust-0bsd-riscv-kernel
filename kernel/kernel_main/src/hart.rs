@@ -1,6 +1,6 @@
 /// Start and setup new harts
 use alloc::{boxed::Box, collections::BTreeMap, sync::Arc};
-use core::{pin::Pin, sync::atomic::AtomicBool};
+use core::{arch::asm, pin::Pin, sync::atomic::AtomicBool};
 
 use aligned::{Aligned, A16};
 
@@ -11,6 +11,7 @@ use crate::{
     process::{self, TASK_STACK_SIZE},
     s_trap_vector, sbi,
     scheduler::schedule_next_slice,
+    test_task::boxed_slice_with_alignment,
     timer_queue,
     trap::TrapFrame,
 };
@@ -44,6 +45,7 @@ pub unsafe fn add_boot_hart(trap_frame: TrapFrame) {
 
 /// Must be run from a recently created hart
 pub fn add_this_secondary_hart(hartid: usize, interrupt_sp: usize) {
+    info!("Started hart");
     // Create the trap frame
     let mut trap_frame = Pin::new(Box::new(TrapFrame::zeroed_interrupt_context()));
 
@@ -79,6 +81,7 @@ pub unsafe fn start_all_harts(start_addr: usize) {
     for hartid in 0.. {
         match sbi::hart_get_status(hartid) {
             Err(_e) => {
+                info!("Max hart: {}", hartid);
                 // This hart is invalid
                 break;
             }
@@ -86,8 +89,7 @@ pub unsafe fn start_all_harts(start_addr: usize) {
                 if status == 1 {
                     // This hart is stopped
                     // Create a stack for it and pass it in a1
-                    let process_stack = alloc::vec![0; 4096*8].into_boxed_slice();
-                    println!("{:p}", process_stack);
+                    let process_stack = boxed_slice_with_alignment(4096 * 8, 4096, &0);
                     sbi::start_hart(
                         hartid,
                         start_addr,
@@ -95,6 +97,8 @@ pub unsafe fn start_all_harts(start_addr: usize) {
                     )
                     .expect("Starting hart failed!");
                     Box::leak(process_stack);
+                } else {
+                    info!("hart status: {}", status)
                 }
             }
         }

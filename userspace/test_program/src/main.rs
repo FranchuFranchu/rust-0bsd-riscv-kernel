@@ -8,7 +8,7 @@
 #![no_main]
 
 use alloc::{string::ToString, vec::Vec};
-use core::panic::PanicInfo;
+use core::{arch::global_asm, panic::PanicInfo};
 
 use flat_bytes::Flat;
 use kernel_api::{handle::open_file, println, process_egg::ProcessEgg, Handle, UserspaceAllocator};
@@ -17,24 +17,26 @@ extern crate alloc;
 
 #[global_allocator]
 static GLOBAL_ALLOCATOR: UserspaceAllocator = UserspaceAllocator::new();
-
 global_asm!(include_str!("start.S"));
 
 #[no_mangle]
 fn main() {
+    println!("{:?}", "a");
     GLOBAL_ALLOCATOR.initialize_min_size();
-    let mut log_output = Handle::open(1, &[]);
+    let mut log_output = Handle::open(1, &[]).unwrap();
+    println!("{:?}", "b");
     log_output.write(b"Hello, world from Rust\n", &[]);
+    println!("{:?}", "c");
 
     return; // Rest of the code is for the future
-    let file = open_file("/other_prog", &[]);
+    let file = open_file("/other_prog", &[]).unwrap();
     let mut fc = Vec::new();
     let mut buffer = Vec::new();
     buffer.resize(4096, 0);
     let mut buffer = buffer.into_boxed_slice();
 
     loop {
-        let read = file.read(&mut buffer, &[]);
+        let read = file.read(&mut buffer, &[]).unwrap();
         println!("read {:?}", read);
         fc.extend_from_slice(&buffer[..read]);
         if read == 0 {
@@ -42,10 +44,11 @@ fn main() {
         }
     }
 
-    let mut egg_handle = ProcessEgg::new();
+    let mut egg_handle = ProcessEgg::new().unwrap();
 
     let elf_file = elf_rs::Elf::from_bytes(&fc);
     if let elf_rs::Elf::Elf64(e) = elf_file.unwrap() {
+        println!("{:?}", 1);
         for p in e.program_header_iter() {
             if p.ph.memsz() as usize == 0 {
                 continue;
@@ -54,22 +57,9 @@ fn main() {
             //root_table.map(&segment[0] as *const u8 as usize, p.ph.vaddr() as usize, (p.ph.memsz() as usize).max(4096), EntryBits::EXECUTE | EntryBits::VALID | EntryBits::READ);
             egg_handle.set_memory(p.ph.vaddr() as usize, p.segment());
         }
+        println!("{:?}", 2);
         egg_handle.set_start_address(e.header().entry_point() as usize)
     }
     egg_handle.hatch();
     println!("{:?}", "finished");
-}
-
-#[panic_handler]
-fn panic_handler(info: &PanicInfo) -> ! {
-    let log_output = Handle::open(1, &[]);
-    log_output.write(b"Rust Userspace Panic\n", &[]);
-    log_output.write(info.message().unwrap().as_str().unwrap().as_bytes(), &[]);
-    if let Some(loc) = info.location() {
-        log_output.write(loc.to_string().as_bytes(), &[]);
-    } else {
-        log_output.write(b"No location", &[]);
-    }
-    log_output.write(b"Finished Writing Panic\n", &[]);
-    loop {}
 }

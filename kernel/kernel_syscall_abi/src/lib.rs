@@ -2,6 +2,12 @@
 
 extern crate alloc;
 
+#[macro_use]
+extern crate kernel_error_macro;
+
+#[macro_use]
+extern crate kernel_as_register;
+
 use num_enum::*;
 #[repr(usize)]
 #[derive(IntoPrimitive, FromPrimitive, Debug)]
@@ -43,5 +49,11 @@ pub enum SyscallNumbers {
     Unknown,
 }
 
+#[derive(AsRegister, Debug)]
+pub enum AllocPagesError {
+    Unknown,
+}
+
 pub mod directory_list;
+pub mod filesystem;
 pub mod process_egg;

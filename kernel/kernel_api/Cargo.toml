@@ -8,6 +8,14 @@ edition = "2021"
 [dependencies]
 kernel_as_register = { path = "../kernel_as_register" }
 kernel_syscall_abi = { path = "../kernel_syscall_abi" }
+kernel_util = { path = "../kernel_util" }
+kernel_error_macro = { path = "../kernel_error_macro" }
 flat-bytes = { path = "../flat_bytes/flat-bytes" }
 slab_allocator_rs = "1.0"
 spin = "*"
+elf_rs = "*"
+
+[features]
+panic = []
+elf = []
+default = ["panic", "elf"]

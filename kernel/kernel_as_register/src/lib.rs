@@ -5,8 +5,10 @@ kernel_as_register_macro::generate_extra_data_structs!();
 pub use kernel_as_register_macro::AsRegister; // Import macro
 use smallvec::SmallVec;
 
+pub type EncodedError = (usize, SmallVec<[usize; 2]>);
+
 pub trait AsRegister {
-    fn as_register(&self) -> (usize, SmallVec<[usize; 2]>);
+    fn as_register(&self) -> EncodedError;
     fn recursive_variant_count() -> usize;
     fn from_register(variant_extra: &(usize, &[usize])) -> Self;
 }
@@ -28,7 +30,7 @@ impl<T> AsRegister for T where T: Into<usize> {
 */
 impl AsRegister for usize {
     #[inline]
-    fn as_register(&self) -> (usize, SmallVec<[usize; 2]>) {
+    fn as_register(&self) -> EncodedError {
         (0, smallvec::smallvec![*self])
     }
 
@@ -45,7 +47,7 @@ macro_rules! impl_as_register_as_same_size_template {
     ( $($t:ty),* ) => {
     $( impl<T> AsRegister for $t
     {
-        fn as_register(&self) -> (usize, SmallVec<[usize; 2]>) {
+        fn as_register(&self) -> EncodedError {
             (0, smallvec::smallvec![*self as _])
         }
 
@@ -66,7 +68,7 @@ macro_rules! impl_as_register_as {
     ( $($t:ty),* ) => {
     $( impl AsRegister for $t
     {
-        fn as_register(&self) -> (usize, SmallVec<[usize; 2]>) {
+        fn as_register(&self) -> EncodedError {
             (0, smallvec::smallvec![*self as _])
         }
 

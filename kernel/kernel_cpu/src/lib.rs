@@ -2,6 +2,8 @@
 #![no_std]
 #![feature(asm)]
 
+use core::arch::asm;
+
 // this enum is from osblog
 #[derive(Copy, Clone)]
 #[repr(usize)]

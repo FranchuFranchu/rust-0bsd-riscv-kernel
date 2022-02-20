@@ -1,6 +1,8 @@
 use alloc::boxed::Box;
 use core::{any::Any, future::Future};
 
+pub use kernel_syscall_abi::filesystem::GenericBlockDeviceError;
+
 use crate::unsafe_buffer::{UnsafeSlice, UnsafeSliceMut};
 
 #[derive(Debug)]
@@ -102,10 +104,4 @@ where
         f.await;
         Ok(())
     }
-}
-
-use crate::as_register::AsRegister;
-#[derive(Debug, AsRegister)]
-pub enum GenericBlockDeviceError {
-    OutOfBounds,
 }

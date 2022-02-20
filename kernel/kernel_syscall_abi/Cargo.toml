@@ -8,3 +8,7 @@ edition = "2021"
 [dependencies]
 num_enum = {version = "0.5", default-features = false}
 flat-bytes = { path = "../flat_bytes/flat-bytes" }
+kernel_error_macro = { path = "../kernel_error_macro" }
+kernel_as_register = { path = "../kernel_as_register" }
+kernel_as_register_macro = { path = "../kernel_as_register_macro" }
+smallvec = "*"

@@ -8,3 +8,8 @@ pub enum ProcessEggPacketHeader {
     Name(),
     Hatch,
 }
+
+#[derive(Debug, AsRegister)]
+pub enum ProcessEggError {
+    Dummy,
+}

@@ -6,6 +6,8 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
+use kernel_cpu::Registers;
+
 use crate::{
     context_switch::{context_switch, schedule_and_switch},
     interrupt_context_waker::InterruptContextWaker,
@@ -87,9 +89,11 @@ where
     crate::process::try_get_process(&process).write().state = ProcessState::Yielded;
     let block = async move {
         future.await;
+        //println!("{:?}", &crate::process::try_get_process(&process).read().trap_frame.general_registers[Registers::A0.idx()..Registers::A7.idx()]);
         // Whatever task we had to do is done, return to userspace now
         context_switch(&process);
     };
+
     let f = Box::pin(block);
     block_until_never(f)
 }

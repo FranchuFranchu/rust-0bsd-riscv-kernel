@@ -8,4 +8,5 @@ edition = "2018"
 [dependencies]
 async-trait = "0.1"
 kernel_as_register = { path = "../kernel_as_register" }
+kernel_syscall_abi = { path = "../kernel_syscall_abi" }
 smallvec = "*"

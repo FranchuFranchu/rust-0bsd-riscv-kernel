@@ -1,4 +1,5 @@
 [workspace]
 members = [
-	"test_program"
+	"test_program",
+	"shell_program",
 ]

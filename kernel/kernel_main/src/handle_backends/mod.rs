@@ -1,4 +1,7 @@
 use alloc::{collections::BTreeMap, sync::Arc};
+use core::future::Future;
+
+use kernel_as_register::{AsRegister, EncodedError};
 
 use self::{
     filesystem::FilesystemHandleBackend, log_output::LogOutputHandleBackend,
@@ -9,6 +12,19 @@ use crate::{handle::HandleBackend, lock::shared::RwLock};
 pub mod filesystem;
 pub mod log_output;
 pub mod process_egg;
+
+/// Utility function
+pub async fn call_as_register_function<
+    Error: AsRegister,
+    Closure: FnOnce() -> Fut,
+    Fut: Future<Output = Result<Success, Error>>,
+    Success,
+>(
+    f: Closure,
+) -> Result<Success, EncodedError> {
+    let a = f().await.map_err(|s| s.as_register());
+    a
+}
 
 pub static BACKEND_CONSTRUCTORS: RwLock<
     BTreeMap<usize, fn() -> Arc<dyn HandleBackend + Send + Sync + 'static>>,
@@ -33,7 +49,7 @@ pub async fn open(
     backend_id: &usize,
     fd_id: &usize,
     options: &[usize],
-) -> Arc<dyn HandleBackend + Send + Sync + 'static> {
+) -> Result<Arc<dyn HandleBackend + Send + Sync + 'static>, EncodedError> {
     let backend = {
         let lock = BACKEND_SINGLETONS.read();
         match lock.get(backend_id) {
@@ -52,6 +68,6 @@ pub async fn open(
             }
         }
     };
-    backend.open(fd_id, options).await;
-    backend
+    backend.open(fd_id, options).await?;
+    Ok(backend)
 }

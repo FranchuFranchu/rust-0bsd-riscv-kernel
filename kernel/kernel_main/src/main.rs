@@ -1,6 +1,6 @@
 //! A RISC-V kernel written in Rust
-
 #![feature(
+    register_tool,
     asm,
     naked_functions,
     const_trait_impl,
@@ -11,6 +11,7 @@
     option_result_unwrap_unchecked,
     unchecked_math,
     const_btree_new,
+    async_closure,
     unsized_fn_params,
     exclusive_range_pattern,
     mixed_integer_ops,
@@ -24,12 +25,16 @@
     global_asm,
     never_type
 )]
+#![register_tool(rust_analyzer)]
 #![cfg_attr(not(test), no_std)]
 #![no_main]
 #![allow(incomplete_features, clippy::empty_loop)]
 // On many parts of the kernel, I would like to specify the justification for each unsafe fn call, even if it is inside an unsafe fn already
-#![allow(unused_unsafe)]
+#![allow(unused_unsafe, rust_analyzer::inactive_code)]
 
+#[macro_use]
+extern crate kernel_error_macro;
+use core::arch::asm;
 extern crate alloc;
 
 use core::{
@@ -86,7 +91,6 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
     if unsafe { BOOT_FRAME.pid } != 0 {
         panic!("main() called more than once!");
     }
-
     cpu::BOOT_HART.store(hartid, Ordering::Relaxed);
 
     unsafe { crate::drivers::uart::Uart::new(0x1000_0000).setup() };
@@ -162,12 +166,14 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
     plic.set_enabled(8, true);
     plic.set_priority(8, 3);
 
-    //crate::fdt::root().read().pretty(0);
+    crate::fdt::root().read().pretty(0);
 
     timer_queue::init();
     timer_queue::init_hart();
 
     handle_backends::initialize_constructors();
+
+    //panic!("{:x}", unsafe { *(0x40000000 as *const u32) });
 
     // Finally, enable interrupts in the cpu level
     // SAFETY: We're enabling interrupts, since we've set stvec already that's not dangerous
@@ -194,6 +200,7 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
         "test-task-2".to_owned(),
     );*/
     unsafe { hart::start_all_harts(new_hart as usize) };
+
     scheduler::schedule_next_slice(0);
     timer_queue::schedule_next();
     loop {

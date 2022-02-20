@@ -3,6 +3,7 @@
 use alloc::{boxed::Box, collections::BTreeMap, string::String, sync::Arc};
 
 use flat_bytes::Flat;
+use kernel_as_register::EncodedError;
 use kernel_cpu::csr::SATP_SV39;
 use serde_derive::{Deserialize, Serialize};
 
@@ -48,7 +49,7 @@ impl<'this> HandleBackend for ProcessEggBackend {
         })
     }
 
-    async fn open(&self, fd_id: &usize, _options: &[usize]) {
+    async fn open(&self, fd_id: &usize, _options: &[usize]) -> Result<usize, EncodedError> {
         let mut egg = ProcessEgg {
             root_table: Box::new(crate::paging::Table::zeroed()),
             start_address: 0,
@@ -65,13 +66,28 @@ impl<'this> HandleBackend for ProcessEggBackend {
             .write()
             .await
             .insert(*fd_id, RwLock::new(egg));
+
+        Ok(0)
     }
 
     fn name(&self) -> &'static str {
         "ProcessEggBackend"
     }
 
-    async fn write(&self, fd_id: &usize, buf: &[u8], options: &[usize]) -> Result<usize, usize> {
+    async fn read(
+        &self,
+        _fd_id: &usize,
+        _buf: &mut [u8],
+        _options: &[usize],
+    ) -> Result<usize, EncodedError> {
+        Ok(0)
+    }
+    async fn write(
+        &self,
+        fd_id: &usize,
+        buf: &[u8],
+        options: &[usize],
+    ) -> Result<usize, EncodedError> {
         let (header, size) = ProcessEggPacketHeader::deserialize_with_size(buf).unwrap();
         let btreemap_lock = self.handle_eggs.read().await;
         let mut egg = btreemap_lock.get(fd_id).unwrap().write().await;
@@ -145,13 +161,5 @@ impl<'this> HandleBackend for ProcessEggBackend {
             _ => panic!(),
         }
         Ok(buf.len())
-    }
-    async fn read(
-        &self,
-        _fd_id: &usize,
-        _buf: &mut [u8],
-        _options: &[usize],
-    ) -> Result<usize, usize> {
-        Ok(0)
     }
 }

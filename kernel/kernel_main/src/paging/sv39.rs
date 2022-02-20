@@ -1,3 +1,5 @@
+use core::arch::asm;
+
 use super::*;
 
 /// SAFETY: It's safe if root is a valid pointer

@@ -1,10 +1,14 @@
 use alloc::{boxed::Box, collections::BTreeMap, sync::Arc};
 
+use kernel_as_register::{AsRegister, EncodedError};
+use kernel_syscall_abi::filesystem::FilesystemError;
+
+use super::call_as_register_function;
 use crate::{
     drivers::{traits::block::GenericBlockDevice, virtio::VirtioDriver},
     external_interrupt::ExternalInterruptHandler,
     fdt,
-    filesystem::ext2::{inode_handle, Ext2, InodeHandleState},
+    filesystem::ext2::{inode_handle, Ext2, Ext2Error, InodeHandleState},
     handle::HandleBackend,
     lock::shared::RwLock,
 };
@@ -43,26 +47,41 @@ impl<'this> HandleBackend for FilesystemHandleBackend {
         })
     }
 
-    async fn open(&self, fd_id: &usize, options: &[usize]) {
-        // a1 (Option #0) = start of filename
-        // a2 (Option #1) = length of filename
-        let filename = unsafe { core::slice::from_raw_parts(options[0] as *const u8, options[1]) };
-        let filename = core::str::from_utf8(filename).unwrap();
+    async fn open(&self, fd_id: &usize, options: &[usize]) -> Result<usize, EncodedError> {
+        call_as_register_function::<FilesystemError, _, _, _>(async move || {
+            // a1 (Option #0) = start of filename
+            // a2 (Option #1) = length of filename
+            let filename =
+                unsafe { core::slice::from_raw_parts(options[0] as *const u8, options[1]) };
+            let filename = core::str::from_utf8(filename).unwrap();
 
-        self.block_device.load_superblock().await.unwrap();
+            self.block_device.load_superblock().await.unwrap();
 
-        let f = self.block_device.get_path(filename).await.unwrap().unwrap();
+            let f = self
+                .block_device
+                .get_path(filename)
+                .await?
+                .ok_or(FilesystemError::FileNotFound)?;
 
-        let h = self.block_device.inode_handle_state(f).await.unwrap();
+            let h = self.block_device.inode_handle_state(f).await.unwrap();
 
-        self.handle_inodes.write().await.insert(*fd_id, h);
+            self.handle_inodes.write().await.insert(*fd_id, h);
+
+            Ok(0)
+        })
+        .await
     }
 
     fn name(&self) -> &'static str {
         "FilesystemBackend"
     }
 
-    async fn write(&self, _fd_id: &usize, _buf: &[u8], _options: &[usize]) -> Result<usize, usize> {
+    async fn write(
+        &self,
+        _fd_id: &usize,
+        _buf: &[u8],
+        _options: &[usize],
+    ) -> Result<usize, EncodedError> {
         Ok(0)
     }
     async fn read(
@@ -70,7 +89,7 @@ impl<'this> HandleBackend for FilesystemHandleBackend {
         fd_id: &usize,
         buf: &mut [u8],
         _options: &[usize],
-    ) -> Result<usize, usize> {
+    ) -> Result<usize, EncodedError> {
         let mut inode_handle = self.handle_inodes.write().await;
         Ok(inode_handle
             .get_mut(fd_id)

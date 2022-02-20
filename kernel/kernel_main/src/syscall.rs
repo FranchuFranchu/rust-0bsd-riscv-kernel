@@ -75,7 +75,7 @@ pub fn do_syscall(frame: *mut TrapFrame) {
                 virtual_address
             };
 
-            let size = size.unstable_div_ceil(4096) * 4096;
+            let size = size.div_ceil(4096) * 4096;
             let paging_flags = flags & EntryBits::RWX;
 
             root_table.map(
@@ -110,16 +110,25 @@ pub fn do_syscall(frame: *mut TrapFrame) {
 
                 let backend_instance =
                     crate::handle_backends::open(&id, &new_fd_number, options).await;
-                core::mem::forget(backend_instance.clone());
-                process.write().handles.insert(
-                    new_fd_number,
-                    Handle {
-                        fd_id: new_fd_number,
-                        backend: Arc::downgrade(&backend_instance),
-                        backend_meta: 0,
-                    },
-                );
-                frame.general_registers[Registers::A0.idx()] = new_fd_number;
+
+                match backend_instance {
+                    Ok(backend_instance) => {
+                        process.write().handles.insert(
+                            new_fd_number,
+                            Handle {
+                                fd_id: new_fd_number,
+                                backend: Arc::downgrade(&backend_instance),
+                                backend_meta: 0,
+                            },
+                        );
+                        core::mem::forget(backend_instance.clone());
+                        frame.general_registers[Registers::A0.idx()] = new_fd_number;
+                        frame.general_registers[Registers::A1.idx()] = 0;
+                    }
+                    Err(e) => {
+                        frame.general_registers[Registers::A0.idx()] = e.0;
+                    }
+                }
             };
             block_and_return_to_userspace(current_pid, alloc::boxed::Box::pin(fut));
         }
@@ -182,11 +191,28 @@ pub fn do_syscall(frame: *mut TrapFrame) {
                     }
                     Err(e) => {
                         frame.general_registers[Registers::A0.idx()] = usize::MAX;
-                        frame.general_registers[Registers::A1.idx()] = e;
+                        frame.general_registers[Registers::A1.idx()] = e.0;
+                        // Copy the other parameters
+                        frame.general_registers[Registers::A2.idx()
+                            ..(Registers::A2.idx() + e.1.len()).min(Registers::A7.idx())]
+                            .copy_from_slice(&e.1);
                     }
                 }
             };
             block_and_return_to_userspace(current_pid, alloc::boxed::Box::pin(fut));
+        }
+        Close => {
+            let id = frame.general_registers[Registers::A0.idx()];
+
+            let options = &frame.general_registers[Registers::A1.idx()..Registers::A7.idx() + 1];
+
+            let backend = {
+                let process = crate::process::try_get_process(&frame.pid);
+                let process = process.write();
+                process.handles[&id].backend.upgrade()
+            };
+
+            backend.unwrap().close(&id, &options);
         }
 
         Unknown => {

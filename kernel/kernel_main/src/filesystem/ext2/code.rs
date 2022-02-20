@@ -2,6 +2,7 @@ use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::ops::{Add, Div, Sub};
 
 use kernel_io::{Read, Write};
+pub use kernel_syscall_abi::filesystem::Ext2Error;
 
 use super::{
     inode_handle::{InodeHandle, InodeHandleState},
@@ -32,29 +33,6 @@ trait DivCeil {
 }
 
 use crate::as_register::AsRegister;
-
-#[derive(Debug, AsRegister)]
-pub enum Ext2Error {
-    OutOfBounds(usize),
-    BlockDeviceError(GenericBlockDeviceError),
-    IoError(kernel_io::Error),
-    NoFreeBlocks,
-    NoFreeInodes,
-    Unknown,
-}
-
-impl From<kernel_io::Error> for Ext2Error {
-    // add code here
-    fn from(other: kernel_io::Error) -> Self {
-        Self::IoError(other)
-    }
-}
-
-impl From<()> for Ext2Error {
-    fn from(_arg: ()) -> Ext2Error {
-        Ext2Error::Unknown
-    }
-}
 
 pub type Result<T> = core::result::Result<T, Ext2Error>;
 

@@ -1,3 +1,25 @@
+#[derive(Default, Copy, Clone)]
+#[repr(C)]
+struct ColorR8G8B8A8Unorm {
+	r: u8, g: u8, b: u8, a: u8
+}
+
+impl ColorR8G8B8A8Unorm {
+	fn rgba_u8(r: u8, g: u8, b: u8, a: u8) -> Self {
+		Self { r, g, b, a }
+	}
+	fn rgb_u8(r: u8, g: u8, b: u8) -> Self {
+		Self { r, g, b, a: u8::MAX }
+	}
+}
+
+#[repr(C)]
+struct Screen {
+	width: u32,
+	height: u32,
+	buffer: Box<[MaybeUninit<Pixel>]>,
+}
+
 #[repr(C, u32)]
 enum VirtioGpuControlType { 
  
@@ -51,7 +73,7 @@ enum VirtioGpuFormats {
 
 #[repr(C)]
 struct VirtioGpuControlHeader { 
-	type: VirtioGpuControlType,
+	r#type: VirtioGpuControlType,
 	flags: u32,
 	fence_id: u64,
 	ctx_id: u32,
@@ -70,8 +92,88 @@ struct VirtioGpuRect {
 #[repr(C)]
 struct VirtioGpuResourceCreate2D { 
         resource_id: u32,
-        format: VirtioGpuFormats 
-        le32 format; 
-        le32 width; 
-        le32 height; 
+        format: VirtioGpuFormat, 
+        width: u32,
+        height: u32, 
 };
+#[repr(C)]
+struct VirtioGpuResourceFlush { 
+        resource_id: u32,
+        rect: VirtioGpuRect, 
+};
+#[repr(C)]
+struct VirtioGpuResourceUnref { 
+        resource_id: u32,
+        padding: u32, 
+};
+
+#[repr(C)]
+struct VirtioGpuResourceDetachBacking { 
+        resource_id: u32,
+        padding: u32, 
+};
+#[repr(C)]
+struct VirtioGpuResourceAttachBacking {
+	resource_id: u32,
+	nr_entries: u32,
+}
+
+
+#[repr(C)]
+struct VirtioGpuMemEntry {
+	addr: u64,
+	length: u32,
+	padding: u32,
+}
+
+#[repr(C)]
+struct VirtioGpuDisplayOne { 
+        rect: VirtioGpuRect,
+	enabled: u32,
+	flags: u32,
+};
+
+#[repr(C)]
+struct VirtioGpuSetScanout {
+	rect: VirtioGpuRect,
+	scanout_id: u32,
+	resource_id: u32,
+}
+
+#[repr(C)]
+struct VirtioGpuResponseDisplayInfo {
+	pmodes: [VirtioGpuDisplayOne; 16],
+}
+
+fn init() {
+	let width = 800;
+	let height = 640;
+	ResourceCreate2d {
+		screen.width, screen.height,
+		resource_id: 1,
+		format: VirtioGpuFormats::R8G8B8A8Unorm,
+	};
+	AttachBacking {
+		resource_id: 1,
+		nr_entries: 1,
+	};
+	MemEntry {
+		addr: screen.addr()
+	};
+	SetScanout {
+		scanout_id: 0,
+		resource_id: 1,
+		rect: VirtioGpuRect::new(0, 0, screen.width, screen.height),
+	};
+	TransferToHost2d {
+		rect: VirtioGpuRect::new(0, 0, screen.width, screen.height),
+		resource_id: 1,
+		offset: 1,
+		padding: 0,
+	};
+	ResourceFlush {
+		rect: VirtioGpuRect::new(0, 0, screen.width, screen.height),
+		resource_id: 1,
+		padding: 0,
+	}
+}

@@ -3,7 +3,10 @@ use core::{any::Any, future::Future};
 
 pub use kernel_syscall_abi::filesystem::GenericBlockDeviceError;
 
-use crate::unsafe_buffer::{UnsafeSlice, UnsafeSliceMut};
+use crate::{
+    arc_inject::WeakInjectRwLock,
+    unsafe_buffer::{UnsafeSlice, UnsafeSliceMut},
+};
 
 #[derive(Debug)]
 pub enum BlockRequestFutureBuffer {
@@ -98,6 +101,39 @@ where
     }
     async fn write(&self, sector: u64, buffer: &[u8]) -> Result<(), ()> {
         let f = RwLock::read(self).create_request(
+            sector,
+            BlockRequestFutureBuffer::WriteFrom(unsafe { UnsafeSlice::new(buffer) }),
+        );
+        f.await;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl<R: lock_api::RawRwLock, T: ?Sized, U: ?Sized> GenericBlockDeviceExt
+    for WeakInjectRwLock<R, T, U>
+where
+    U: GenericBlockDevice + Send + Sync,
+{
+    async fn read(&self, sector: u64, length: usize) -> Result<Box<[u8]>, ()> {
+        let mut buffer = alloc::vec![0; length].into_boxed_slice();
+        let f = WeakInjectRwLock::read(self).create_request(
+            sector,
+            BlockRequestFutureBuffer::ReadInto(unsafe { UnsafeSliceMut::new(&mut buffer) }),
+        );
+        f.await;
+        Ok(buffer)
+    }
+    async fn read_buffer(&self, sector: u64, buffer: &mut [u8]) -> Result<(), ()> {
+        let f = WeakInjectRwLock::read(self).create_request(
+            sector,
+            BlockRequestFutureBuffer::ReadInto(unsafe { UnsafeSliceMut::new(buffer) }),
+        );
+        f.await;
+        Ok(())
+    }
+    async fn write(&self, sector: u64, buffer: &[u8]) -> Result<(), ()> {
+        let f = WeakInjectRwLock::read(self).create_request(
             sector,
             BlockRequestFutureBuffer::WriteFrom(unsafe { UnsafeSlice::new(buffer) }),
         );

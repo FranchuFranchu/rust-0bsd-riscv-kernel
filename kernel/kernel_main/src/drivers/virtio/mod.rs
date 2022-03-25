@@ -1,6 +1,7 @@
 // For the legacy interface
 
 pub mod block;
+pub mod net;
 
 use alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
 use core::{alloc::Layout, convert::TryInto, future::Future, slice, task::Waker};
@@ -8,7 +9,7 @@ use core::{alloc::Layout, convert::TryInto, future::Future, slice, task::Waker};
 use itertools::Itertools;
 use volatile_register::{RO, RW, WO};
 
-use self::block::VirtioBlockDevice;
+use self::{block::VirtioBlockDevice, net::VirtioNetworkDevice};
 use crate::{
     lock::shared::{Mutex, RwLock},
     paging::PAGE_ALIGN,
@@ -482,9 +483,12 @@ use crate::drivers::traits::block::GenericBlockDevice;
 
 pub enum VirtioDriver {
     Block(Arc<RwLock<dyn GenericBlockDevice + Send + Sync + Unpin>>),
+    Network(Arc<RwLock<dyn GenericNetworkDevice + Send + Sync + Unpin>>),
 }
 
 use core::task::Poll;
+
+use super::traits::net::GenericNetworkDevice;
 impl Future for VirtioDevice {
     type Output = u16;
 
@@ -610,14 +614,22 @@ impl VirtioDevice {
     }
 
     /// moves self into a driver
-    pub fn make_driver(this: Arc<Mutex<Self>>) -> Option<VirtioDriver> {
+    pub fn make_driver(
+        this: Arc<Mutex<Self>>,
+    ) -> Option<Arc<RwLock<dyn to_trait::ToTraitAny + Send + Sync + Unpin>>> {
         let id = unsafe { (*this.lock().configuration).device_id.read() };
         match id {
+            1 => {
+                // Network device
+                VirtioNetworkDevice::negotiate_features(&mut this.lock());
+                let dev = VirtioNetworkDevice::configure(this).unwrap();
+                Some(dev)
+            }
             2 => {
                 // Block device
                 VirtioBlockDevice::negotiate_features(&mut this.lock());
                 let dev = VirtioBlockDevice::configure(this).unwrap();
-                Some(VirtioDriver::Block(dev))
+                Some(dev)
             }
             _ => {
                 warn!("Unknown/Unimplemented VirtIO device type: {}", unsafe {
@@ -717,9 +729,9 @@ impl VirtioDevice {
 }
 
 pub trait VirtioDeviceType {
-    type Trait: ?Sized;
-
-    fn configure(device: Arc<Mutex<VirtioDevice>>) -> Result<Arc<RwLock<Self::Trait>>, ()>
+    fn configure(
+        device: Arc<Mutex<VirtioDevice>>,
+    ) -> Result<Arc<RwLock<dyn to_trait::ToTraitAny + Send + Sync + Unpin>>, ()>
     where
         Self: Sized;
 
@@ -735,7 +747,4 @@ pub trait VirtioDeviceType {
     }
 
     fn on_used_queue_ready(&self, _queue: u16) {}
-
-    // Called directly by the interrupt handler outside of the VirtIO modulse
-    fn on_interrupt(&self);
 }

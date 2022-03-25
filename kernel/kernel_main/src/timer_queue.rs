@@ -36,7 +36,7 @@ impl Ord for TimerEvent {
     // add code here
 }
 
-static TIMER_QUEUE: RwLock<BTreeMap<usize, RwLock<BinaryHeap<TimerEvent>>>> =
+pub static TIMER_QUEUE: RwLock<BTreeMap<usize, RwLock<BinaryHeap<TimerEvent>>>> =
     RwLock::new(BTreeMap::new());
 
 pub fn init() {}
@@ -80,4 +80,22 @@ pub fn schedule_at(event: TimerEvent) {
     let e = t.get(&load_hartid()).expect("Hartid queue not found! (2)");
     e.write().push(event);
     drop(t);
+}
+
+/// same as schedule_at, but if theres an earlier event for this type, dont bother scheduling
+pub fn schedule_at_or_earlier(event: TimerEvent) {
+    let t = TIMER_QUEUE.read();
+
+    let e = t.get(&load_hartid()).expect("Hartid queue not found! (2)");
+    let mut timer_queue = e.write();
+    if timer_queue
+        .iter()
+        .filter(|ev| ev.cause == event.cause && ev.instant < event.instant)
+        .next()
+        .is_some()
+    {
+        return;
+    } else {
+        timer_queue.push(event);
+    }
 }

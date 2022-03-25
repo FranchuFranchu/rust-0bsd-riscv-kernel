@@ -17,7 +17,7 @@ serde_derive = "*"
 bincode = {default-features = false, features = ["derive", "atomic"]}
 slab_allocator_rs = "1"
 zerocopy = "*"
-spin = {features = ["lock_api"]}
+spin = {features = ["lock_api", "lazy"]}
 async-trait = "0.1"
 # Nightly feature is to make Mutex::new() a const fn
 downcast-rs = { version = "1.2.0", default-features = false }
@@ -35,6 +35,8 @@ kernel_lock = { path = "../kernel_lock" }
 kernel_trap_frame = { path = "../kernel_trap_frame" }
 kernel_syscall_abi = { path = "../kernel_syscall_abi" }
 kernel_error_macro = { path = "../kernel_error_macro" }
+to_trait = { path = "../to_trait" }
+arcinject = { path = "../arcinject" }
 # has no-std support
 snafu = { default-features = false }
 

@@ -39,9 +39,18 @@ pub fn get_time() -> u64 {
 }
 
 #[must_use = "Futures do nothing unless polled"]
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct TimeoutFuture {
     pub for_time: u64,
+}
+
+impl TimeoutFuture {
+    pub fn absolute(for_time: u64) -> Self {
+        Self { for_time }
+    }
+    pub fn relative(for_time: u64) -> Self {
+        Self::absolute(for_time + get_time())
+    }
 }
 
 impl Future for TimeoutFuture {
@@ -76,7 +85,7 @@ impl Future for TimeoutFuture {
             // Remember to wake up this future when necessary
             WAITING_TIMEOUTS
                 .write()
-                .insert(insert_position, (*self, cx.waker().clone()));
+                .insert(insert_position, (self.clone(), cx.waker().clone()));
 
             // Trigger a timer interrupt in the target time
             use crate::timer_queue::{TimerEvent, TimerEventCause};

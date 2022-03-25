@@ -222,7 +222,7 @@ pub fn get_active_root_table(satp: usize) -> Option<Box<dyn PagingDebug>> {
     let table_addr = (satp & ((1 << 60) - 1)) << 12;
     match paging_type {
         SATP_BARE => None,
-        _SATP_SV39 => unsafe {
+        SATP_SV39 => unsafe {
             Some(Box::new(sv39::RootTable(
                 (table_addr as *mut Table).as_mut().unwrap(),
             )))

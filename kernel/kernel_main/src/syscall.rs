@@ -5,7 +5,7 @@ use crate::{
     context_switch,
     cpu::{write_satp, Registers},
     paging::{EntryBits, Paging},
-    process::{self},
+    process::{self, try_get_process},
     test_task::boxed_slice_with_alignment,
     trap_frame::{TrapFrame, TrapFrameExt},
     trap_future_executor::block_and_return_to_userspace,
@@ -44,10 +44,13 @@ pub fn do_syscall(frame: *mut TrapFrame) {
                 core::mem::forget(new_pages);
                 physical_addr
             } else {
-                unimplemented!(
-                    "Mapping virtual address space to phyisical address space provided by user"
-                )
-                // Some(physical_addr)
+                if try_get_process(&mut frame.pid).read().user_id == 0 {
+                    physical_addr
+                } else {
+                    unimplemented!(
+                        "Mapping virtual address space to physical address space provided by user"
+                    )
+                }
             };
 
             let virtual_address = if virtual_address == usize::MAX {

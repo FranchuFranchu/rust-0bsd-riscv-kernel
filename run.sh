@@ -23,6 +23,12 @@ if [ $GDB == "yes" ]; then
 	' &
 	export QEMUOPTS="-S -s $QEMUOPTS"
 fi
+export QEMUOPT_D="guest_errors,unimp"
+if [ $INT == "yes" ]; then
+	export QEMUOPT_D="int,$QEMUOPT_D"
+fi
+
+
 
 qemu-system-riscv$BITS $QEMUOPTS \
 	-machine virt \
@@ -30,7 +36,7 @@ qemu-system-riscv$BITS $QEMUOPTS \
 	-chardev stdio,id=console,mux=on \
 	-serial chardev:console \
 	-monitor chardev:console \
-	-d unimp,guest_errors \
+	-d $QEMUOPT_D \
 	-blockdev driver=file,filename=`dirname $0`/drive.img,node-name=hda \
 	-device virtio-blk-device,drive=hda \
 	-nographic \

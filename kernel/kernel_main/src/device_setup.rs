@@ -146,7 +146,7 @@ pub fn setup_devices() {
     drop(lock);
 
     // fdt::root().read().pretty(0);
-
+    /*
     let _handler2 = ExternalInterruptHandler::new(
         10,
         alloc::sync::Arc::new(|_id| {
@@ -155,7 +155,7 @@ pub fn setup_devices() {
                 .unwrap();
             print!("C {}", c)
         }),
-    );
+    );*/
 
     info!("Finished device setup");
 

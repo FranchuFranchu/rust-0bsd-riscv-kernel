@@ -8,4 +8,6 @@ members = [
 	"kernel_main",
 	"kernel_api",
 	"kernel_syscall_abi",
+	"to_trait",
+	"to_trait_macro",
 ]

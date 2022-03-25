@@ -13,11 +13,13 @@ use core::{
 use kernel_io::Write;
 
 use crate::{
+    arc_inject::WeakInjectRwLock,
     asm::do_supervisor_syscall_0,
     cpu::{self, Registers},
     drivers::{traits::block::GenericBlockDevice, virtio::VirtioDriver},
     external_interrupt::ExternalInterruptHandler,
     fdt,
+    filesystem::ext2::Ext2,
     paging::{
         EntryBits::{self, RWX, VALID},
         Paging,
@@ -56,6 +58,17 @@ pub fn boxed_slice_with_alignment<T: Clone>(
             *ptr.add(i) = MaybeUninit::new(initialize.clone())
         }
         alloc::boxed::Box::from_raw(core::slice::from_raw_parts_mut(ptr as *mut T, size))
+    }
+}
+pub fn boxed_slice_with_alignment_uninit<T: Clone>(
+    size: usize,
+    align: usize,
+) -> alloc::boxed::Box<[MaybeUninit<T>]> {
+    unsafe {
+        let ptr: *mut MaybeUninit<T> =
+            alloc::alloc::alloc(Layout::from_size_align(size * size_of::<T>(), align).unwrap())
+                as *mut MaybeUninit<T>;
+        alloc::boxed::Box::from_raw(core::slice::from_raw_parts_mut(ptr, size))
     }
 }
 
@@ -149,26 +162,31 @@ pub fn test_task_3() {
         crate::device_setup::is_done_future().await;
         // Get the block device
 
-        let block_device: Arc<RwLock<dyn GenericBlockDevice + Send + Sync + Unpin>> = {
+        let block_device = {
             let guard = fdt::root().read();
             let block_device_node = guard.get("soc/virtio_mmio@10008000").unwrap();
             let lock = block_device_node.kernel_struct.read();
             let bd = lock
                 .as_ref()
                 .unwrap()
-                .downcast_ref::<(VirtioDriver, Option<ExternalInterruptHandler>)>();
+                .downcast_ref::<(
+                    Arc<RwLock<dyn to_trait::ToTraitAny + Send + Sync + Unpin>>,
+                    Option<ExternalInterruptHandler>,
+                )>()
+                .unwrap();
 
-            let block_device = if let VirtioDriver::Block(bd) = &bd.as_ref().unwrap().0 {
-                bd
-            } else {
-                panic!("Block device not found!");
-            };
-            block_device.clone()
+            use to_trait::ToTraitExt;
+            crate::arc_inject::ArcInject::downgrade(&crate::arc_inject::ArcInject::new_std(
+                &bd.0,
+                |p| {
+                    unsafe { p.data_ptr().as_ref().unwrap() }
+                        .to_trait_ref::<dyn GenericBlockDevice + Send + Sync + Unpin>()
+                        .unwrap()
+                },
+            ))
         };
-
-        use crate::filesystem::ext2::code::Ext2;
-
-        let ext2 = Ext2::new(&block_device);
+        let block_device = WeakInjectRwLock { weak: block_device };
+        let ext2 = Ext2::new(block_device);
 
         ext2.load_superblock().await.unwrap();
 
@@ -252,6 +270,7 @@ pub fn test_task_3() {
                 process.trap_frame.pc = e.header().entry_point() as usize;
                 core::mem::forget(program_stack);
                 process.is_supervisor = false;
+                process.name = Some(alloc::string::String::from("/main"));
                 process.trap_frame.satp = (&*root_table.0 as *const crate::paging::Table as usize)
                     >> 12
                     | cpu::csr::SATP_SV39;

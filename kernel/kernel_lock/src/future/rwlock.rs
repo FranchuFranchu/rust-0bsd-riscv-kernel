@@ -153,6 +153,15 @@ impl<'rwlock, T> Drop for AsyncRwLockReadGuard<'rwlock, T> {
     }
 }
 
+impl<T> Default for AsyncRwLock<T>
+where
+    T: Default,
+{
+    fn default() -> Self {
+        Self::new(T::default())
+    }
+}
+
 unsafe impl<T> Send for AsyncRwLock<T> {}
 unsafe impl<T> Sync for AsyncRwLock<T> {}
 unsafe impl<'rwlock, T> Send for AsyncRwLockReadGuard<'rwlock, T> {}

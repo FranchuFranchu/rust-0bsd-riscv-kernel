@@ -110,8 +110,6 @@ pub unsafe extern "C" fn trap_handler(
                         timer_queue::schedule_next();
                     }
                     ContextSwitch => {
-                        debug!("scheduling...");
-
                         schedule_next_slice(1);
 
                         timer_queue::schedule_next();
@@ -135,8 +133,9 @@ pub unsafe extern "C" fn trap_handler(
                 // Assume it's because of the PLIC0
                 let meta = get_this_hart_meta().unwrap();
                 let interrupt_id = meta.plic.claim_highest_priority();
-
-                external_interrupt::external_interrupt(interrupt_id);
+                if ((*frame).pid != 1) {
+                    external_interrupt::external_interrupt(interrupt_id);
+                }
 
                 meta.plic.complete(interrupt_id);
 
@@ -180,7 +179,10 @@ pub unsafe extern "C" fn trap_handler(
     read_sscratch().as_mut().unwrap().clear_in_fault_trap();
     interrupt_context_waker::wake_all();
 
-    if epc > 0x8000000 as usize && !try_get_process(&(*frame).pid).read().is_supervisor {
+    if (*frame).pid > 1
+        && epc > 0x8000000 as usize
+        && !try_get_process(&(*frame).pid).read().is_supervisor
+    {
         panic!("{:?}", "user process aren't really meant to do this");
     }
 

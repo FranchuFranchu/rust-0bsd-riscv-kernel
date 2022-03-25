@@ -10,7 +10,7 @@ pub trait TrapFrameExt {
     fn print(&self);
     /// You need to be the only owner of the trap frame to make it the current one
     unsafe fn make_current(&mut self);
-    unsafe fn satp_as_sv39_root_table(&mut self) -> RootTable;
+    unsafe fn satp_as_sv39_root_table(&mut self) -> RootTable<'static>;
     #[cfg(feature = "backtrace")]
     fn set_gimli_register(&mut self, register: &gimli::Register, value: usize);
     #[cfg(feature = "backtrace")]
@@ -47,7 +47,7 @@ impl TrapFrameExt for TrapFrame {
         cpu::write_sscratch(self as *const TrapFrame as usize)
     }
 
-    unsafe fn satp_as_sv39_root_table(&mut self) -> RootTable {
+    unsafe fn satp_as_sv39_root_table(&mut self) -> RootTable<'static> {
         use crate::paging::sv39::RootTable;
         RootTable(((self.satp << 12) as *mut Table).as_mut().unwrap())
     }

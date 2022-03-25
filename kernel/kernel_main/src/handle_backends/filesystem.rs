@@ -5,6 +5,7 @@ use kernel_syscall_abi::filesystem::FilesystemError;
 
 use super::call_as_register_function;
 use crate::{
+    arc_inject::WeakInjectRwLock,
     drivers::{traits::block::GenericBlockDevice, virtio::VirtioDriver},
     external_interrupt::ExternalInterruptHandler,
     fdt,
@@ -24,23 +25,31 @@ impl<'this> HandleBackend for FilesystemHandleBackend {
     where
         Self: Sized,
     {
-        let block_device: Arc<RwLock<dyn GenericBlockDevice + Send + Sync + Unpin>> = {
+        let block_device = {
             let guard = fdt::root().read();
             let block_device_node = guard.get("soc/virtio_mmio@10008000").unwrap();
             let lock = block_device_node.kernel_struct.read();
             let bd = lock
                 .as_ref()
                 .unwrap()
-                .downcast_ref::<(VirtioDriver, Option<ExternalInterruptHandler>)>();
+                .downcast_ref::<(
+                    Arc<RwLock<dyn to_trait::ToTraitAny + Send + Sync + Unpin>>,
+                    Option<ExternalInterruptHandler>,
+                )>()
+                .unwrap();
 
-            let block_device = if let VirtioDriver::Block(bd) = &bd.as_ref().unwrap().0 {
-                bd
-            } else {
-                panic!("Block device not found!");
-            };
-            block_device.clone()
+            use to_trait::ToTraitExt;
+            crate::arc_inject::ArcInject::downgrade(&crate::arc_inject::ArcInject::new_std(
+                &bd.0,
+                |p| {
+                    unsafe { p.data_ptr().as_ref().unwrap() }
+                        .to_trait_ref::<dyn GenericBlockDevice + Send + Sync + Unpin>()
+                        .unwrap()
+                },
+            ))
         };
-        let block_device = Ext2::new(&block_device);
+        let block_device = WeakInjectRwLock { weak: block_device };
+        let block_device = Ext2::new(block_device);
         alloc::sync::Arc::new(Self {
             block_device: block_device,
             handle_inodes: crate::lock::future::rwlock::RwLock::new(BTreeMap::new()),

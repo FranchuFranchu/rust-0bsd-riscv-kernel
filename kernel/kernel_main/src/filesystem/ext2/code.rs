@@ -2,6 +2,7 @@ use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::ops::{Add, Div, Sub};
 
 use kernel_io::{Read, Write};
+use kernel_lock::shared::RawRwLock;
 pub use kernel_syscall_abi::filesystem::Ext2Error;
 
 use super::{
@@ -14,7 +15,11 @@ use crate::{
 };
 
 pub struct Ext2 {
-    device: Arc<RwLock<dyn GenericBlockDevice + Send + Sync + Unpin>>,
+    device: crate::arc_inject::WeakInjectRwLock<
+        crate::lock::shared::rwlock::RawSharedRwLock,
+        dyn to_trait::ToTraitAny + Send + Sync + Unpin,
+        dyn GenericBlockDevice + Send + Sync + Unpin,
+    >,
     superblock: RwLock<Option<Box<Superblock>>>,
     inode_allocation_lock: crate::lock::future::Mutex<()>,
     block_allocation_lock: crate::lock::future::Mutex<()>,
@@ -40,9 +45,15 @@ impl<T> DivCeil for T where T: Div<Output = T> + Sub<Output = T> + Add<Output = 
 {}
 
 impl Ext2 {
-    pub fn new(device: &Arc<RwLock<dyn GenericBlockDevice + Send + Sync + Unpin>>) -> Self {
+    pub fn new(
+        device: crate::arc_inject::WeakInjectRwLock<
+            crate::lock::shared::rwlock::RawSharedRwLock,
+            dyn to_trait::ToTraitAny + Send + Sync + Unpin,
+            dyn GenericBlockDevice + Send + Sync + Unpin,
+        >,
+    ) -> Self {
         Ext2 {
-            device: device.clone(),
+            device,
             superblock: RwLock::new(None),
             inode_allocation_lock: crate::lock::future::Mutex::new(()),
             block_allocation_lock: crate::lock::future::Mutex::new(()),
@@ -59,7 +70,7 @@ impl Ext2 {
     }
     pub async fn read_block(&self, block: u32) -> Result<Box<[u8]>> {
         Ok(GenericBlockDeviceExt::read(
-            &*self.device,
+            &self.device,
             self.block_to_sector(block),
             self.block_size() as usize,
         )
@@ -348,7 +359,7 @@ impl Ext2 {
 
     pub async fn write_block(&self, block: u32, buffer: &[u8]) -> Result<()> {
         let ret =
-            GenericBlockDeviceExt::write(&*self.device, self.block_to_sector(block), buffer).await;
+            GenericBlockDeviceExt::write(&self.device, self.block_to_sector(block), buffer).await;
 
         ret.map_err(|s| (s.into(): Ext2Error))
     }
@@ -454,7 +465,7 @@ impl Ext2 {
         self.get_relative_path(2, path).await
     }
     pub async fn load_superblock(&self) -> Result<()> {
-        let superblock: Box<[u8]> = GenericBlockDeviceExt::read(&*self.device, 2, 512 * 2).await?;
+        let superblock: Box<[u8]> = GenericBlockDeviceExt::read(&self.device, 2, 512 * 2).await?;
         let mut guard = self.superblock.write();
         // SAFETY: There are no illegal values for struct Superblock since it's repr C
         // and the superblock will not have data outside of allocated memory

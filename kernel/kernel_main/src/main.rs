@@ -85,6 +85,7 @@ static mut BOOT_FRAME: trap::TrapFrame = trap::TrapFrame::zeroed_interrupt_conte
 
 #[macro_use]
 pub mod std_macros;
+pub mod arc_inject;
 
 #[no_mangle]
 pub fn main(hartid: usize, opaque: usize) -> ! {
@@ -161,8 +162,8 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
     // Set up the external interrupts
     let plic = Plic0::new_with_fdt();
     plic.set_threshold(0);
-    plic.set_enabled(10, true);
-    plic.set_priority(10, 3);
+    plic.set_enabled(10, false);
+    plic.set_priority(10, 6);
     plic.set_enabled(8, true);
     plic.set_priority(8, 3);
 
@@ -170,9 +171,11 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
 
     timer_queue::init();
     timer_queue::init_hart();
+    info!("Init");
 
     handle_backends::initialize_constructors();
 
+    info!("Sched");
     //panic!("{:x}", unsafe { *(0x40000000 as *const u32) });
 
     // Finally, enable interrupts in the cpu level
@@ -187,20 +190,24 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
         sstatus |= 1 << 1 | 1 << 18;
         asm!("csrw sstatus, {0}" , in(reg) ( sstatus));
     }
+    info!("Sched");
 
     use alloc::borrow::ToOwned;
+    info!("Sched2");
     process::new_supervisor_process_with_name(test_task::test_task_3, "disk-test".to_owned());
+    info!("Sched1");
     process::new_supervisor_process_with_name(
         device_setup::setup_devices,
         "setup-devices".to_owned(),
     );
 
+    info!("Sched");
     /*process::new_supervisor_process_with_name(
         test_task_2,
         "test-task-2".to_owned(),
     );*/
     unsafe { hart::start_all_harts(new_hart as usize) };
-
+    info!("Sched");
     scheduler::schedule_next_slice(0);
     timer_queue::schedule_next();
     loop {
@@ -217,6 +224,7 @@ fn panic(info: &PanicInfo) -> ! {
         cpu::write_sie(0);
     }
     HART_PANIC_COUNT.fetch_add(1, Ordering::SeqCst);
+    println!("{:?}", info.message());
     unsafe { std_macros::OUTPUT_LOCK.force_unlock() };
     if let Some(e) = unsafe { read_sscratch().as_ref() } {
         if e.is_double_faulting() {
@@ -264,7 +272,7 @@ fn panic(info: &PanicInfo) -> ! {
     let message = info.message().unwrap_or(&fnomsg);
 
     let trap_frame = cpu::read_sscratch();
-
+    status_summary();
     // Check if trap frame is out of bounds (which means we can't read data from it)
     if (trap_frame as usize) > 0x80200000
         && (trap_frame as usize) < (unsafe { &_heap_end } as *const c_void as usize)
@@ -297,17 +305,17 @@ fn panic(info: &PanicInfo) -> ! {
     }
 }
 
-#[no_mangle]
 pub fn status_summary() {
-    println!("{:?}", "Processes: ");
+    println!("Processes: ");
     PROCESSES
         .read()
         .iter()
         .filter(|(_k, v)| PidSlot::is_used(v))
-        .for_each(|(_k, v)| {
+        .for_each(|(k, v)| {
             let v = v.unwrap_ref().unwrap().read();
             println!(
-                "{}:",
+                "{}: {}:",
+                k,
                 v.name.as_ref().map(|s| s.as_ref()).unwrap_or("<unnamed>")
             );
             println!("	{:?}", v.state);

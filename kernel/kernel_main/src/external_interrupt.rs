@@ -2,8 +2,14 @@
 //!
 
 use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
+use core::{
+    future::Future,
+    pin::Pin,
+    sync::atomic::{AtomicUsize, Ordering},
+    task::{Context, Poll, Waker},
+};
 
-use crate::lock::shared::RwLock;
+use crate::{hart::get_this_hart_meta, lock::shared::RwLock};
 
 static EXTERNAL_INTERRUPT_HANDLERS: RwLock<BTreeMap<u32, Vec<Arc<dyn Fn(u32) + Send + Sync>>>> =
     RwLock::new(BTreeMap::new());
@@ -21,6 +27,9 @@ fn add_handler(id: u32, function: Arc<dyn Fn(u32) + Send + Sync>) {
     match lock.get_mut(&id) {
         Some(expr) => expr.push(function),
         None => {
+            let plic = &get_this_hart_meta().unwrap().plic;
+            plic.set_enabled(id, true);
+            plic.set_priority(id, 3);
             lock.insert(id, alloc::vec![function]);
         }
     };
@@ -40,6 +49,13 @@ fn remove_handler(id: u32, function: &Arc<dyn Fn(u32) + Send + Sync>) -> Result<
         })
         .unwrap();
     v.remove(index);
+    if v.is_empty() {
+        drop(v);
+        let plic = &get_this_hart_meta().unwrap().plic;
+        plic.set_enabled(id, false);
+        plic.set_priority(id, 6);
+        guard.remove(&id);
+    }
     Ok(())
 }
 
@@ -59,5 +75,60 @@ impl ExternalInterruptHandler {
 impl Drop for ExternalInterruptHandler {
     fn drop(&mut self) {
         remove_handler(self.id, &self.function).unwrap();
+    }
+}
+
+use spin::Lazy;
+
+#[derive(Default)]
+pub struct ExternalInterruptFuture {
+    wakers: Vec<Waker>,
+    count: AtomicUsize,
+    handler: Option<ExternalInterruptHandler>,
+}
+
+impl ExternalInterruptFuture {
+    pub fn new(id: u32) -> NType {
+        let future = Arc::new(RwLock::new(ExternalInterruptFuture::default()));
+        {
+            let mut lock = future.write();
+            let future = future.clone();
+            lock.handler = Some(ExternalInterruptHandler::new(
+                id,
+                Arc::new(move |_| {
+                    let mut lock = future.write();
+                    for i in core::mem::take(&mut lock.wakers).into_iter() {
+                        i.wake()
+                    }
+                    lock.count.fetch_add(1, Ordering::SeqCst);
+                }),
+            ));
+        }
+        NType(future)
+    }
+}
+
+impl Future for ExternalInterruptFuture {
+    type Output = usize;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if *self.count.get_mut() == 0 {
+            self.wakers.push(cx.waker().clone());
+            Poll::Pending
+        } else {
+            self.count.fetch_sub(1, Ordering::SeqCst);
+            self.handler.take();
+            Poll::Ready(*self.count.get_mut())
+        }
+    }
+}
+
+pub struct NType(Arc<RwLock<ExternalInterruptFuture>>);
+
+impl Future for NType {
+    type Output = usize;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut *self.0.write()).poll(cx)
     }
 }

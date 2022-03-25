@@ -15,6 +15,7 @@ extern crate alloc;
 pub mod allocator;
 pub mod elf;
 pub mod handle;
+pub mod interrupt;
 pub mod memory;
 pub mod panic;
 pub mod println;

@@ -35,6 +35,7 @@ pub struct RequestHeader {
 }
 
 #[derive(Debug)]
+#[to_trait::to_trait(GenericBlockDevice + Send + Sync + Unpin)]
 pub struct VirtioBlockDevice {
     request_virtqueue: Mutex<SplitVirtqueue>,
     device: Arc<Mutex<VirtioDevice>>,
@@ -253,9 +254,9 @@ impl VirtioBlockDevice {
 use crate::drivers::traits::block::GenericBlockDevice;
 
 impl VirtioDeviceType for VirtioBlockDevice {
-    type Trait = dyn GenericBlockDevice + Send + Sync + Unpin;
-
-    fn configure(device: Arc<Mutex<VirtioDevice>>) -> Result<Arc<RwLock<Self::Trait>>, ()> {
+    fn configure(
+        device: Arc<Mutex<VirtioDevice>>,
+    ) -> Result<Arc<RwLock<dyn to_trait::ToTraitAny + Send + Sync + Unpin>>, ()> {
         let q = device.lock().configure_queue(0);
         let dev = VirtioBlockDevice {
             request_virtqueue: Mutex::new(q),
@@ -282,8 +283,5 @@ impl VirtioDeviceType for VirtioBlockDevice {
         device.get_device_features(); // ignore their features
         device.set_driver_features(0);
         device.accept_features().unwrap();
-    }
-    fn on_interrupt(&self) {
-        //self.device.lock().on_interrupt();
     }
 }

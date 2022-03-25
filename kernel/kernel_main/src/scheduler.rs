@@ -2,8 +2,9 @@
 
 use crate::{
     cpu,
-    process::{ProcessState, PROCESS_SCHED_QUEUE},
-    timeout, timer_queue,
+    process::{try_get_process, ProcessState, PROCESS_SCHED_QUEUE},
+    timeout,
+    timer_queue::{self, schedule_at_or_earlier},
 };
 
 // Return the next PID to be run
@@ -25,7 +26,6 @@ pub fn schedule() -> usize {
                 let mut lock = strong.write();
                 if lock.can_be_scheduled() {
                     pid = lock.trap_frame.pid;
-                    // TODO maybe add a way to "reserve" this process to make it so that it doesn't execute?
                     lock.state = ProcessState::Scheduled;
                     break;
                 }
@@ -64,7 +64,7 @@ pub fn schedule() -> usize {
 
 pub fn schedule_next_slice(slices: u64) {
     use timer_queue::{schedule_at, TimerEvent, TimerEventCause::*};
-    schedule_at(TimerEvent {
+    schedule_at_or_earlier(TimerEvent {
         instant: timeout::get_time() + slices * 1_000_000,
         cause: ContextSwitch,
     });

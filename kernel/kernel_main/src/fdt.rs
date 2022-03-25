@@ -306,7 +306,7 @@ fn build(mut token: *const u32) -> Node {
                 if let Some(t) = current_node.take() {
                     if let Some(mut last) = node_stack.pop_back() {
                         last.insert_child(t);
-                        current_node.insert(last);
+                        current_node = Some(last);
                     } else {
                         current_node = Some(t)
                     }

@@ -23,6 +23,7 @@ use crate::{
     handle::Handle,
     lock::shared::RwLock,
     scheduler::schedule_next_slice,
+    status_summary,
     test_task::boxed_slice_with_alignment,
     trap::{in_interrupt_context, use_boot_frame_if_necessary},
     trap_frame::{TrapFrame, TrapFrameExt},
@@ -64,7 +65,7 @@ impl PidSlot {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ProcessState {
     // Currently running (right now)
     Running,
@@ -89,6 +90,8 @@ pub struct Process {
     /// For supervisor mode the kernel initially creates a small stack page for this process
     /// This is where it's stored
     pub kernel_allocated_stack: Option<Box<[u8; TASK_STACK_SIZE]>>,
+
+    pub user_id: u64,
 }
 
 extern "C" {
@@ -335,6 +338,7 @@ pub fn new_process(mut constructor: impl FnOnce(&mut Process)) -> usize {
         kernel_allocated_stack: None,
         name: None,
         no_op_yield_count: AtomicUsize::new(0),
+        user_id: 0,
     };
 
     constructor(&mut process);
@@ -452,7 +456,7 @@ pub fn try_get_process(pid: &usize) -> Arc<RwLock<Process>> {
     PROCESSES
         .read()
         .get(pid)
-        .unwrap()
+        .unwrap_or_else(|| panic!("Process with pid {} does not exist", pid))
         .unwrap_ref()
         .unwrap()
         .clone()
@@ -498,7 +502,9 @@ pub fn idle() -> ! {
         if let Some(process) = this_process {
             let mut process = process.write();
             crate::trap::use_boot_frame_if_necessary(&*process.trap_frame as _);
-            process.state = ProcessState::Pending;
+            if process.state == ProcessState::Running {
+                process.state = ProcessState::Pending;
+            }
         }
         new_supervisor_process_with_name(
             idle_entry_point,

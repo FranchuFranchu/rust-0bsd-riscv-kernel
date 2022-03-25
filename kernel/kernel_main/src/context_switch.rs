@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 
 use crate::{
     cpu,
-    process::{self, ProcessState},
+    process::{self, try_get_process, ProcessState},
     scheduler,
 };
 

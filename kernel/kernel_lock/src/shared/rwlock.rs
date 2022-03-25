@@ -1,5 +1,5 @@
 use kernel_cpu::load_hartid;
-use lock_api::{GuardNoSend, RawRwLock};
+use lock_api::{GuardNoSend, GuardSend, RawRwLock};
 
 pub use super::super::spin::RawRwLock as RawSpinRwLock;
 use crate::shared::{lock_and_disable_interrupts, unlock_and_enable_interrupts_if_necessary};
@@ -13,7 +13,7 @@ unsafe impl RawRwLock for RawSharedRwLock {
         internal: RawSpinRwLock::INIT,
     };
 
-    type GuardMarker = GuardNoSend;
+    type GuardMarker = GuardSend;
 
     fn lock_shared(&self) {
         debug!(

@@ -75,7 +75,7 @@ impl Debug for Handle {
         fmt.debug_struct("Handle")
             .field("fd_id", &self.fd_id)
             .field("backend", &self.backend.upgrade().map(|s| s.name()))
-            .finish();
+            .finish()?;
         Ok(())
     }
 }

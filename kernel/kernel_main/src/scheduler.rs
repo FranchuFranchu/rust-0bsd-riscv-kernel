@@ -1,8 +1,7 @@
 // 0BSD
 
 use crate::{
-    cpu,
-    process::{try_get_process, ProcessState, PROCESS_SCHED_QUEUE},
+    process::{ProcessState, PROCESS_SCHED_QUEUE},
     timeout,
     timer_queue::{self, schedule_at_or_earlier},
 };
@@ -63,7 +62,7 @@ pub fn schedule() -> usize {
 }
 
 pub fn schedule_next_slice(slices: u64) {
-    use timer_queue::{schedule_at, TimerEvent, TimerEventCause::*};
+    use timer_queue::{TimerEvent, TimerEventCause::*};
     schedule_at_or_earlier(TimerEvent {
         instant: timeout::get_time() + slices * 1_000_000,
         cause: ContextSwitch,

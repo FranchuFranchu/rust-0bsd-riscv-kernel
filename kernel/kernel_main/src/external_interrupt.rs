@@ -89,6 +89,7 @@ pub struct ExternalInterruptFuture {
 
 impl ExternalInterruptFuture {
     pub fn new(id: u32) -> NType {
+        crate::context_switch::make_this_process_pending();
         let future = Arc::new(RwLock::new(ExternalInterruptFuture::default()));
         {
             let mut lock = future.write();
@@ -128,7 +129,7 @@ pub struct NType(Arc<RwLock<ExternalInterruptFuture>>);
 impl Future for NType {
     type Output = usize;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         Pin::new(&mut *self.0.write()).poll(cx)
     }
 }

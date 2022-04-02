@@ -5,7 +5,6 @@ use alloc::{boxed::Box, collections::BTreeMap, string::String, sync::Arc};
 use flat_bytes::Flat;
 use kernel_as_register::EncodedError;
 use kernel_cpu::csr::SATP_SV39;
-use serde_derive::{Deserialize, Serialize};
 
 use crate::{
     handle::HandleBackend,
@@ -15,7 +14,6 @@ use crate::{
         Paging,
     },
     process::{new_process, Process},
-    test_task::boxed_slice_with_alignment,
     virtual_buffers,
 };
 
@@ -86,7 +84,7 @@ impl<'this> HandleBackend for ProcessEggBackend {
         &self,
         fd_id: &usize,
         buf: &[u8],
-        options: &[usize],
+        _options: &[usize],
     ) -> Result<usize, EncodedError> {
         let (header, size) = ProcessEggPacketHeader::deserialize_with_size(buf).unwrap();
         let btreemap_lock = self.handle_eggs.read().await;
@@ -106,7 +104,7 @@ impl<'this> HandleBackend for ProcessEggBackend {
                     if let Some(physical_address) = unsafe { table.query(page_number) } {
                         unsafe { core::slice::from_raw_parts_mut(physical_address as *mut _, 4096) }
                     } else {
-                        let mut slice = boxed_slice_with_alignment(4096, 4096, &0u8);
+                        let mut slice = kernel_util::boxed_slice_with_alignment(4096, 4096, &0u8);
                         let addr = &mut slice[0] as *mut u8;
                         table.map(addr as usize, page_number, 0x4096, RWX | VALID | USER);
                         core::mem::forget(slice);
@@ -114,7 +112,6 @@ impl<'this> HandleBackend for ProcessEggBackend {
                     }
                 };
                 for (page_number, next_page_number) in iter1.zip(iter2) {
-                    use crate::paging::Paging;
                     let index_in_data = page_number - page_aligned_address;
                     println!("pg {:x}", page_number);
                     assert!(page_number < 0x80000000);
@@ -138,7 +135,7 @@ impl<'this> HandleBackend for ProcessEggBackend {
                 drop(egg);
                 drop(btreemap_lock);
 
-                let mut egg = self
+                let egg = self
                     .handle_eggs
                     .write()
                     .await

@@ -8,12 +8,14 @@
     default_alloc_error_handler,
     const_mut_refs,
     panic_info_message,
+    trait_upcasting,
     option_result_unwrap_unchecked,
     unchecked_math,
     const_btree_new,
     async_closure,
     unsized_fn_params,
     exclusive_range_pattern,
+    specialization,
     mixed_integer_ops,
     box_into_inner,
     unsized_locals,
@@ -46,15 +48,13 @@ use core::{
 use process::PROCESSES;
 
 use crate::{
-    benchmark::time_fn,
     cpu::{load_hartid, read_sscratch},
     hart::get_hart_meta,
-    paging::Paging,
     plic::Plic0,
     process::{delete_process, PidSlot},
     sbi::shutdown,
     timeout::get_time_setup,
-    virtual_buffers::new_virtual_buffer,
+    timer_queue::{schedule_at_or_earlier, TimerEvent, TimerEventCause},
 };
 
 #[macro_use]
@@ -116,7 +116,6 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
     unsafe {
         paging::sv39::identity_map(&mut paging::ROOT_PAGE as *mut paging::Table)
     }
-    use crate::paging::sv39::RootTable;
 
     // Initialize allocation
     allocator::init();
@@ -191,7 +190,10 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
         asm!("csrw sstatus, {0}" , in(reg) ( sstatus));
     }
     info!("Sched");
-
+    schedule_at_or_earlier(TimerEvent::after(
+        0x1_000_000,
+        TimerEventCause::SystemStatus,
+    ));
     use alloc::borrow::ToOwned;
     info!("Sched2");
     process::new_supervisor_process_with_name(test_task::test_task_3, "disk-test".to_owned());

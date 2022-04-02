@@ -202,7 +202,7 @@ pub enum FilesystemError {
 }
 
 impl From<Utf8Error> for IoError {
-    fn from(e: Utf8Error) -> IoError {
+    fn from(_e: Utf8Error) -> IoError {
         IoError::new_simple(IoErrorKind::InvalidData)
     }
 }
@@ -257,7 +257,7 @@ impl IoErrorKind {
 }
 
 impl IoError {
-    pub const fn new_const(kind: IoErrorKind, message: &'static &'static str) -> IoError {
+    pub const fn new_const(kind: IoErrorKind, _message: &'static &'static str) -> IoError {
         Self::SimpleMessage(kind)
     }
     pub const fn new_simple(kind: IoErrorKind) -> IoError {
@@ -275,7 +275,7 @@ impl IoError {
 }
 
 impl From<()> for Ext2Error {
-    fn from(v: ()) -> Ext2Error {
+    fn from(_v: ()) -> Ext2Error {
         Ext2Error::Unknown
     }
 }

@@ -26,7 +26,7 @@ unsafe impl RawRwLock for RawSpinRwLock {
             return false;
         }
 
-        while let Err(e) = self.value.compare_exchange(
+        while let Err(_e) = self.value.compare_exchange(
             outdated_value,
             outdated_value + SHARED,
             Ordering::SeqCst,
@@ -54,7 +54,7 @@ unsafe impl RawRwLock for RawSpinRwLock {
             return false;
         }
 
-        while let Err(e) = self.value.compare_exchange(
+        while let Err(_e) = self.value.compare_exchange(
             outdated_value,
             outdated_value + WRITER,
             Ordering::SeqCst,

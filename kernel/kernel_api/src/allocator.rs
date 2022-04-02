@@ -1,7 +1,4 @@
-use core::{
-    alloc::{AllocError, Allocator, GlobalAlloc},
-    ptr::NonNull,
-};
+use core::{alloc::GlobalAlloc, ptr::NonNull};
 
 use slab_allocator_rs::Heap;
 use spin::Mutex;
@@ -13,7 +10,7 @@ pub struct UserspaceAllocator(Mutex<Option<Heap>>);
 unsafe impl GlobalAlloc for UserspaceAllocator {
     unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
         let mut heap_lock = self.0.lock();
-        let mut heap = heap_lock.as_mut().expect("Heap not initialized!");
+        let heap = heap_lock.as_mut().expect("Heap not initialized!");
         let mut pointer = heap.allocate(layout);
         while pointer.is_err() {
             // If we don't have enough memory, grow the heap
@@ -24,7 +21,7 @@ unsafe impl GlobalAlloc for UserspaceAllocator {
                 return 0 as *mut u8;
             }
             crate::println_crate!("{:?}", "hello!");
-            unsafe { heap.grow(vaddr, layout.size(), Heap::layout_to_allocator(&layout)) }
+            heap.grow(vaddr, layout.size(), Heap::layout_to_allocator(&layout));
             pointer = heap.allocate(layout);
         }
         pointer.unwrap().as_ptr() as *mut u8
@@ -40,7 +37,7 @@ unsafe impl GlobalAlloc for UserspaceAllocator {
 
 impl UserspaceAllocator {
     pub const fn new() -> Self {
-        unsafe { UserspaceAllocator(Mutex::new(None)) }
+        UserspaceAllocator(Mutex::new(None))
     }
     pub fn initialize_min_size(&self) -> memory::Result<()> {
         let size = slab_allocator_rs::MIN_HEAP_SIZE * 8;

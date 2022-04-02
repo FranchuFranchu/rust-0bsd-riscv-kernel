@@ -1,6 +1,6 @@
 use alloc::collections::{BTreeMap, BinaryHeap};
 
-use crate::{cpu::load_hartid, lock::shared::RwLock, sbi};
+use crate::{cpu::load_hartid, lock::shared::RwLock, sbi, timeout::get_time};
 
 /// SBI only allows us to have 1 timer set at a time
 /// So instead we have to keep track of all points in time we want to get interrupted on
@@ -10,12 +10,22 @@ use crate::{cpu::load_hartid, lock::shared::RwLock, sbi};
 pub enum TimerEventCause {
     ContextSwitch,
     TimeoutFuture,
+    SystemStatus,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct TimerEvent {
     pub instant: u64,
     pub cause: TimerEventCause,
+}
+
+impl TimerEvent {
+    pub fn after(after: u64, cause: TimerEventCause) -> Self {
+        Self {
+            instant: get_time() + after,
+            cause,
+        }
+    }
 }
 
 impl PartialOrd for TimerEvent {
@@ -85,7 +95,6 @@ pub fn schedule_at(event: TimerEvent) {
 /// same as schedule_at, but if theres an earlier event for this type, dont bother scheduling
 pub fn schedule_at_or_earlier(event: TimerEvent) {
     let t = TIMER_QUEUE.read();
-
     let e = t.get(&load_hartid()).expect("Hartid queue not found! (2)");
     let mut timer_queue = e.write();
     if timer_queue

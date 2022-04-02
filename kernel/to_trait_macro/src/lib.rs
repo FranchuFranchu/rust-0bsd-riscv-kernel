@@ -4,8 +4,7 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
-    token::Comma,
-    DeriveInput, Expr, Token, Type,
+    DeriveInput, Token, Type,
 };
 
 struct MyMacroInput {
@@ -22,8 +21,7 @@ impl Parse for MyMacroInput {
     }
 }
 #[proc_macro_attribute]
-pub fn to_trait(attr: TokenStream, mut item: TokenStream) -> TokenStream {
-    println!("{:?}", attr);
+pub fn to_trait(attr: TokenStream, item: TokenStream) -> TokenStream {
     let traits = parse_macro_input!(attr as MyMacroInput).items;
     let item = parse_macro_input!(item as DeriveInput);
     let ident = item.ident.clone();

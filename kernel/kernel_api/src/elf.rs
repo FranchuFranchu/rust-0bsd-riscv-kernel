@@ -18,7 +18,6 @@ pub fn process_egg_from_elf_file(file: &crate::Handle) -> Result<ProcessEgg, Elf
     buffer.resize(4096, 0);
     let mut buffer = buffer.into_boxed_slice();
 
-    todo!();
     loop {
         let read = file.read(&mut buffer, &[])?;
         fc.extend_from_slice(&buffer[..read]);

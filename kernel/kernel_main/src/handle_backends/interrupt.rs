@@ -1,5 +1,5 @@
 use alloc::{boxed::Box, collections::BTreeMap};
-use core::{borrow::BorrowMut, convert::TryInto};
+use core::convert::TryInto;
 
 use kernel_as_register::AsRegister;
 use kernel_lock::future::RwLock;
@@ -8,7 +8,6 @@ use crate::{
     external_interrupt::ExternalInterruptFuture,
     handle::HandleBackend,
     handle_backends::{call_as_register_function, EncodedError},
-    timeout::TimeoutFuture,
 };
 
 // Simply waits for an interrupt to happen
@@ -36,8 +35,8 @@ impl HandleBackend for InterruptHandleBackend {
     async fn read(
         &self,
         fd_id: &usize,
-        buf: &mut [u8],
-        options: &[usize],
+        _buf: &mut [u8],
+        _options: &[usize],
     ) -> Result<usize, EncodedError> {
         call_as_register_function::<InterruptError, _, _, _>(async move || {
             let a = ExternalInterruptFuture::new(

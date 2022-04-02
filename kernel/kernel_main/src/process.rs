@@ -14,17 +14,14 @@ use core::{
     task::{RawWaker, RawWakerVTable, Waker},
 };
 
-use cpu::read_time;
-
 use crate::{
     asm::do_supervisor_syscall_0,
     context_switch,
     cpu::{self, load_hartid, read_sscratch, Registers},
     handle::Handle,
+    hart::get_this_hart_meta,
     lock::shared::RwLock,
     scheduler::schedule_next_slice,
-    status_summary,
-    test_task::boxed_slice_with_alignment,
     trap::{in_interrupt_context, use_boot_frame_if_necessary},
     trap_frame::{TrapFrame, TrapFrameExt},
 };
@@ -134,14 +131,15 @@ impl Process {
         // Get a raw pointer to the Box's data (which is the trap frame)
         let frame_pointer =
             Pin::as_ref(&self.trap_frame).get_ref() as *const TrapFrame as *mut TrapFrame;
+        /*
+            let (time, perf, cycle): (usize, usize, usize);
 
-        let (time, perf, cycle): (usize, usize, usize);
+            unsafe { asm!("csrr {0}, time", out(reg)(time),) };
+            unsafe { asm!("csrr {0}, instret", out(reg)(perf),) };
+            unsafe { asm!("csrr {0}, cycle", out(reg)(cycle),) };
 
-        unsafe { asm!("csrr {0}, time", out(reg)(time),) };
-        unsafe { asm!("csrr {0}, instret", out(reg)(perf),) };
-        unsafe { asm!("csrr {0}, cycle", out(reg)(cycle),) };
-
-        //debug!("{:?} {:?} {:?}", perf, cycle, time);
+            //debug!("{:?} {:?} {:?}", perf, cycle, time);
+        */
 
         debug!(
             "Switch to frame at \x1b[32m{:?}\x1b[0m (PC {:x} NAME {:?} HART {})",
@@ -321,7 +319,7 @@ pub fn allocate_pid_lockfree(processes: &mut BTreeMap<usize, PidSlot>) -> usize 
 
 /// Creates a supervisor process and returns PID
 /// SAFETY: Only when function is a valid function pointer
-pub fn new_process(mut constructor: impl FnOnce(&mut Process)) -> usize {
+pub fn new_process(constructor: impl FnOnce(&mut Process)) -> usize {
     // Hold this guard for as much time as possible
     // to prevent a race condition on allocate_pid
     let mut guard = PROCESSES.write();
@@ -369,13 +367,13 @@ pub fn new_supervisor_process_int(function: usize, a0: usize) -> usize {
         process.trap_frame.general_registers[Registers::Ra.idx()] =
             process_return_address_supervisor as usize;
 
-        let process_stack = boxed_slice_with_alignment(4096, 4096, &0u8);
+        let process_stack = kernel_util::boxed_slice_with_alignment(4096, 4096, &0u8);
         process.trap_frame.interrupt_stack =
             process_stack.as_ptr() as usize + TASK_STACK_SIZE - 0x10;
 
         Box::leak(process_stack);
 
-        let process_stack = boxed_slice_with_alignment(TASK_STACK_SIZE, 4096, &0u8);
+        let process_stack = kernel_util::boxed_slice_with_alignment(TASK_STACK_SIZE, 4096, &0u8);
         process.trap_frame.general_registers[Registers::Sp.idx()] =
             process_stack.as_ptr() as usize + TASK_STACK_SIZE - 0x10;
 
@@ -482,6 +480,7 @@ pub fn useful_process_count() -> usize {
 
 pub fn idle_entry_point() {
     cpu::wfi();
+    get_this_hart_meta().unwrap().set_idle_process(None);
     unsafe { do_supervisor_syscall_0(1) };
 }
 
@@ -506,10 +505,16 @@ pub fn idle() -> ! {
                 process.state = ProcessState::Pending;
             }
         }
-        new_supervisor_process_with_name(
-            idle_entry_point,
-            format!("Idle process for hart {}", load_hartid()),
-        )
+        if let Some(pid) = get_this_hart_meta().unwrap().get_idle_process() {
+            pid
+        } else {
+            let pid = new_supervisor_process_with_name(
+                idle_entry_point,
+                format!("Idle process for hart {}", load_hartid()),
+            );
+            get_this_hart_meta().unwrap().set_idle_process(Some(pid));
+            pid
+        }
     };
     assert!(try_get_process(&pid).read().is_supervisor == true);
     schedule_next_slice(1);

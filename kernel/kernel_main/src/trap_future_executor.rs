@@ -1,8 +1,4 @@
-use alloc::{
-    boxed::Box,
-    sync::{Arc, Weak},
-    task::Wake,
-};
+use alloc::{boxed::Box, sync::Arc, task::Wake};
 use core::{
     future::Future,
     hint::unreachable_unchecked,
@@ -10,7 +6,7 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
-use kernel_cpu::{read_sscratch, Registers};
+use kernel_cpu::read_sscratch;
 
 use crate::{
     context_switch::{context_switch, schedule_and_switch},
@@ -82,6 +78,7 @@ fn poll_trap_future_waker(waker: Arc<TrapFutureWaker>) -> ! {
     crate::process::try_get_process(&waker.state.lock().pid)
         .write()
         .state = ProcessState::Yielded;
+
     // Otherwise, it means that the future is still Pending
     // The waker will be called eventually when it's needed
     // Meanwhile, switch to another process that has something to do
@@ -109,7 +106,7 @@ pub struct TrackDrop<G>(pub G);
 
 impl<G: Future> Future for TrackDrop<G> {
     type Output = G::Output;
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         unsafe { self.map_unchecked_mut(|s| &mut s.0) }.poll(cx)
     }
 }
@@ -127,7 +124,7 @@ where
     let f = {
         crate::process::try_get_process(&process).write().state = ProcessState::Yielded;
         // Pin<Box<Fn() -> (Future<Box<Pin<Future>>)>>
-        (move |trap| {
+        move |trap| {
             let a: Pin<Box<dyn Future<Output = !> + Send>> = Box::pin(async move {
                 future.await;
                 //println!("{:?}", &crate::process::try_get_process(&process).read().trap_frame.general_registers[Registers::A0.idx()..Registers::A7.idx()]);
@@ -147,7 +144,7 @@ where
                 context_switch(&process);
             });
             a
-        })
+        }
     };
     block_until_never(f)
 }

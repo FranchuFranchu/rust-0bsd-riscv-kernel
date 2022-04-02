@@ -101,7 +101,7 @@ impl<'a> Paging for RootTable<'a> {
                 if table[vpn0].value & EntryBits::VALID == 0 {
                     None
                 } else {
-                    Some((table[vpn0].value))
+                    Some(table[vpn0].value)
                 }
             } else if table[vpn1].value & EntryBits::VALID == 0 {
                 None

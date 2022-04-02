@@ -1,22 +1,26 @@
 //! The functions here are testing tasks that can be run to make sure that other complex kernel tasks
 //! won't crash
 
-use alloc::{alloc::Layout, collections::BTreeSet, vec::Vec};
+use alloc::{collections::BTreeSet, vec::Vec};
 use core::{
     arch::asm,
-    mem::{size_of, MaybeUninit},
     ops::{BitAnd, BitXor},
     pin::Pin,
     task::Context,
 };
 
 use kernel_io::Write;
+use kernel_util::boxed_slice_with_alignment;
+use to_trait::ToTraitExt;
 
 use crate::{
     arc_inject::WeakInjectRwLock,
     asm::do_supervisor_syscall_0,
     cpu::{self, Registers},
-    drivers::{traits::block::GenericBlockDevice, virtio::VirtioDriver},
+    drivers::{
+        traits::block::GenericBlockDevice,
+        virtio::gpu::{init_dev, VirtioGpuDriverE},
+    },
     external_interrupt::ExternalInterruptHandler,
     fdt,
     filesystem::ext2::Ext2,
@@ -43,33 +47,6 @@ fn twist(value: &mut usize) -> usize {
         .bitxor(0b10101110101)
         .bitand(0xFF);
     *value
-}
-
-pub fn boxed_slice_with_alignment<T: Clone>(
-    size: usize,
-    align: usize,
-    initialize: &T,
-) -> alloc::boxed::Box<[T]> {
-    unsafe {
-        let ptr: *mut MaybeUninit<T> =
-            alloc::alloc::alloc(Layout::from_size_align(size * size_of::<T>(), align).unwrap())
-                as *mut MaybeUninit<T>;
-        for i in 0..size {
-            *ptr.add(i) = MaybeUninit::new(initialize.clone())
-        }
-        alloc::boxed::Box::from_raw(core::slice::from_raw_parts_mut(ptr as *mut T, size))
-    }
-}
-pub fn boxed_slice_with_alignment_uninit<T: Clone>(
-    size: usize,
-    align: usize,
-) -> alloc::boxed::Box<[MaybeUninit<T>]> {
-    unsafe {
-        let ptr: *mut MaybeUninit<T> =
-            alloc::alloc::alloc(Layout::from_size_align(size * size_of::<T>(), align).unwrap())
-                as *mut MaybeUninit<T>;
-        alloc::boxed::Box::from_raw(core::slice::from_raw_parts_mut(ptr, size))
-    }
 }
 
 pub fn test_task() {
@@ -141,6 +118,32 @@ pub fn test_task_2() {
     info!("Timeout finished");
 }
 
+use alloc::sync::Arc;
+
+use crate::lock::shared::RwLock;
+pub fn find_virtio_device<Trait: 'static + ?Sized>(
+) -> Option<Arc<RwLock<dyn to_trait::ToTraitAny + Send + Sync + Unpin>>> {
+    let mut dev = None;
+    crate::fdt::root().read().walk_nonstatic(&mut |node| {
+        if node.name.starts_with("virtio_mmio") {
+            let scratch_lock = node.kernel_struct.read();
+
+            if let Some(any) = scratch_lock.as_ref() {
+                let any = any
+                    .downcast_ref::<(
+                        (Arc<RwLock<dyn to_trait::ToTraitAny + Send + Sync + Unpin>>),
+                        Option<ExternalInterruptHandler>,
+                    )>()
+                    .unwrap();
+                if any.0.read().to_trait_ref::<Trait>().is_some() {
+                    dev = Some(any.0.clone())
+                }
+            }
+        }
+    });
+    dev
+}
+
 pub fn test_task_3() {
     {
         use crate::lock::shared::Mutex;
@@ -160,9 +163,11 @@ pub fn test_task_3() {
     let block = async {
         // First, wait until the device setup is done
         crate::device_setup::is_done_future().await;
-        // Get the block device
 
-        let block_device = {
+        find_virtio_device::<dyn GenericBlockDevice + Send + Sync + Unpin>();
+        // Get the block device
+        /*let gpu_device = {
+
             let guard = fdt::root().read();
             let block_device_node = guard.get("soc/virtio_mmio@10008000").unwrap();
             let lock = block_device_node.kernel_struct.read();
@@ -174,10 +179,16 @@ pub fn test_task_3() {
                     Option<ExternalInterruptHandler>,
                 )>()
                 .unwrap();
+            let mut k = bd.0.write();
+            let mut w = (&mut *k as &mut dyn core::any::Any).downcast_mut::<VirtioGpuDriverE>().unwrap();
+            init_dev(&mut w.device_type)
+        };*/
+        let block_device = {
+            let bd = find_virtio_device::<dyn GenericBlockDevice + Send + Sync + Unpin>();
 
             use to_trait::ToTraitExt;
             crate::arc_inject::ArcInject::downgrade(&crate::arc_inject::ArcInject::new_std(
-                &bd.0,
+                &bd.unwrap(),
                 |p| {
                     unsafe { p.data_ptr().as_ref().unwrap() }
                         .to_trait_ref::<dyn GenericBlockDevice + Send + Sync + Unpin>()

@@ -1,7 +1,6 @@
-use core::{cell::UnsafeCell, ops::Deref};
+use core::ops::Deref;
 
 pub use arcinject::{ArcInject, WeakInject};
-use lock_api::RwLockReadGuard;
 
 pub struct WeakInjectRwLock<R: lock_api::RawRwLock, T: ?Sized, U: ?Sized> {
     pub weak: WeakInject<lock_api::RwLock<R, T>, U>,

@@ -76,7 +76,7 @@ pub fn open_file(file: &str, options: &[usize]) -> core::result::Result<Handle, 
 
 impl core::fmt::Write for Handle {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        self.write(s.as_bytes(), &[]);
+        self.write(s.as_bytes(), &[]).unwrap();
         Ok(())
     }
 }

@@ -9,7 +9,6 @@ use alloc::{
 use core::{any::Any, mem::MaybeUninit};
 
 use cstr_core::CStr;
-use itertools::Itertools;
 use num_enum::{FromPrimitive, IntoPrimitive};
 
 use crate::{alloc::string::ToString, lock::shared::RwLock};

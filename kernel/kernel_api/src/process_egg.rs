@@ -1,5 +1,3 @@
-use core::arch::asm;
-
 use flat_bytes::Flat;
 use kernel_syscall_abi::process_egg::{ProcessEggError, ProcessEggPacketHeader};
 

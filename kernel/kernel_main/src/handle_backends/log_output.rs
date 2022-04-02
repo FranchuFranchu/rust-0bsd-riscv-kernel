@@ -2,7 +2,7 @@ use alloc::boxed::Box;
 
 use kernel_as_register::EncodedError;
 
-use crate::{handle::HandleBackend, std_macros::UART_ADDRESS};
+use crate::handle::HandleBackend;
 
 pub struct LogOutputHandleBackend {
     addr: usize,

@@ -58,7 +58,7 @@ unsafe impl RawMutex for RawSpinlock {
 }
 
 impl RawSpinlock {
-    pub(crate) unsafe fn unlock_and_swap(&self) -> bool {
+    pub unsafe fn unlock_and_swap(&self) -> bool {
         self.locked.swap(false, Ordering::Release)
     }
 }

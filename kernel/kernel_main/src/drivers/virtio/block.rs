@@ -112,6 +112,7 @@ impl BlockDevice for VirtioBlockDevice {
             header: RequestHeader {
                 r#type: match buffer {
                     BlockRequestFutureBuffer::WriteFrom(_) => 1,
+                    BlockRequestFutureBuffer::Owned(_) => 1,
                     BlockRequestFutureBuffer::ReadInto(_) => 0,
                 },
                 reserved: 0,
@@ -139,6 +140,7 @@ impl VirtioBlockDevice {
         use BlockRequestFutureBuffer::*;
 
         last = match future.buffer.take().unwrap() {
+            Owned(e) => vq_lock.new_descriptor_from_boxed_slice(e, true, Some(last)),
             WriteFrom(e) => vq_lock.new_descriptor_from_unsafe_slice(e, false, Some(last)),
             ReadInto(e) => vq_lock.new_descriptor_from_unsafe_slice_mut(e, true, Some(last)),
         };
@@ -190,7 +192,7 @@ impl VirtioBlockDevice {
             let mut vq_lock = self.request_virtqueue.lock();
 
             // Create the iterator for this descriptor chain
-            let descriptor_chain_data_iterator = vq_lock.pop_used_element_to_iterator();
+            let descriptor_chain_data_iterator = vq_lock.pop_used_element_to_iterator().unwrap();
             let descriptor_id = descriptor_chain_data_iterator.pointed_chain.unwrap();
             /*
 

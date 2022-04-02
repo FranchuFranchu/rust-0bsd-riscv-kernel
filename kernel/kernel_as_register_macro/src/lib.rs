@@ -51,7 +51,6 @@ pub fn derive_as_register(input: TokenStream) -> TokenStream {
 
 #[derive(Debug, Default)]
 struct AsRegisterStruct {
-    member_variants: Vec<()>,
     recursive_variant_count: Vec<TokenStream2>,
     as_register_code: TokenStream2,
     from_register_code: TokenStream2,

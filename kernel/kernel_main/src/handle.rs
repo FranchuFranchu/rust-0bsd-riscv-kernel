@@ -55,7 +55,7 @@ pub trait HandleBackend {
         None
     }
 
-    fn close(&self, _id: &usize, options: &[usize]) -> Result<(), EncodedError> {
+    fn close(&self, _id: &usize, _options: &[usize]) -> Result<(), EncodedError> {
         Ok(())
     }
 }

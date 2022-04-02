@@ -1,7 +1,7 @@
 #![no_std]
 
 use alloc::string::String;
-use core::{borrow::Borrow, convert::TryInto, iter::FromIterator, marker::PhantomData};
+use core::marker::PhantomData;
 
 pub use flat_bytes_derive::Flat;
 
@@ -72,7 +72,7 @@ macro_rules! impl_array {
         impl_array!(@as_expr [$($body)*])
     };
     (@step ($d: ident, $idx:expr, $t:ident, $($ts:ident,)*) -> ($($body:tt)*)) => {
-        impl_array!(@step ($d, $idx+1, $($ts,)*) -> ($($body)* $t::deserialize(&$d[::core::mem::size_of::<$t>()*($idx)..])?,));
+        impl_array!(@step ($d, $idx+1, $($ts,)*) -> ($($body)* $t::deserialize(&$d[::core::mem::size_of::<$t>()*($idx)..])?,))
     };
     (@as_expr $e:expr) => {$e};
     {$n:expr, $t:ident $($ts:ident)*}=> {

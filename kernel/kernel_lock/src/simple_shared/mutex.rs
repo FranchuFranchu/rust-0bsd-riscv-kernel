@@ -40,9 +40,8 @@ unsafe impl RawMutex for RawSharedLock {
 
     unsafe fn unlock(&self) {
         self.internal.unlock();
-        unsafe {
-            kernel_cpu::write_sie(self.old_sie.load(Ordering::SeqCst));
-        }
+
+        kernel_cpu::write_sie(self.old_sie.load(Ordering::SeqCst));
     }
 }
 

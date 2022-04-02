@@ -8,11 +8,7 @@ use core::{
 use cpu::MMIO_MTIME;
 
 use crate::{
-    cpu,
-    lock::shared::RwLock,
-    paging::PAGE_ALIGN,
-    timer_queue,
-    virtual_buffers::{new_virtual_buffer, VirtualBuffer},
+    cpu, lock::shared::RwLock, paging::PAGE_ALIGN, timer_queue, virtual_buffers::new_virtual_buffer,
 };
 
 /// This Vec is sorted by item.0.for_time

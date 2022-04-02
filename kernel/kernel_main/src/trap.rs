@@ -1,6 +1,5 @@
 //! A function that runs when a trap happens
 
-use cpu::read_sp;
 pub use kernel_cpu::{clear_interrupt_context, in_interrupt_context, set_interrupt_context};
 pub use kernel_trap_frame::TrapFrame;
 
@@ -14,7 +13,9 @@ use crate::{
     process::{delete_process, try_get_process},
     sbi,
     scheduler::schedule_next_slice,
-    syscall, timeout, timer_queue, HART_PANIC_COUNT,
+    status_summary, syscall, timeout,
+    timer_queue::{self, schedule_at_or_earlier, TimerEvent},
+    HART_PANIC_COUNT,
 };
 
 /// If sscratch equals original_trap_frame, then set sscratch to the boot frame for this hart
@@ -126,6 +127,27 @@ pub unsafe extern "C" fn trap_handler(
 
                         context_switch::schedule_and_switch();
                     }
+                    SystemStatus => {
+                        schedule_at_or_earlier(TimerEvent::after(0x1_000_000, SystemStatus));
+                        info!("System status:");
+                        status_summary();
+
+                        schedule_next_slice(1);
+
+                        timer_queue::schedule_next();
+
+                        context_switch::make_this_process_pending();
+
+                        unsafe {
+                            get_this_hart_meta()
+                                .unwrap()
+                                .boot_frame
+                                .write()
+                                .make_current()
+                        };
+
+                        context_switch::schedule_and_switch();
+                    }
                 }
             }
             // Supervisor external interrupt
@@ -133,7 +155,7 @@ pub unsafe extern "C" fn trap_handler(
                 // Assume it's because of the PLIC0
                 let meta = get_this_hart_meta().unwrap();
                 let interrupt_id = meta.plic.claim_highest_priority();
-                if ((*frame).pid != 1) {
+                if (*frame).pid != 1 {
                     external_interrupt::external_interrupt(interrupt_id);
                 }
 

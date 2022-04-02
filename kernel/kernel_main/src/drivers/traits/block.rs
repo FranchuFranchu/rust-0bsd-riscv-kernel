@@ -12,6 +12,7 @@ use crate::{
 pub enum BlockRequestFutureBuffer {
     WriteFrom(UnsafeSlice<u8>),
     ReadInto(UnsafeSliceMut<u8>),
+    Owned(Box<[u8]>),
 }
 
 pub trait BlockDevice {

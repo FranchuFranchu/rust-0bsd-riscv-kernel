@@ -2,7 +2,7 @@
     lang_items,
     global_asm,
     default_alloc_error_handler,
-    panic_info_message,
+    panic_info_message
 )]
 #![no_std]
 #![no_main]
@@ -12,8 +12,7 @@ use core::{arch::global_asm, panic::PanicInfo, ptr::read_volatile};
 
 use flat_bytes::Flat;
 use kernel_api::{
-    println, Handle,
-    UserspaceAllocator, memory::alloc_pages, interrupt::wait_for_interrupt,
+    interrupt::wait_for_interrupt, memory::alloc_pages, println, Handle, UserspaceAllocator,
 };
 
 extern crate alloc;
@@ -27,7 +26,6 @@ global_asm!(include_str!("start.S"));
 const SONG_TIMINGS: [u8; 15] = [4, 2, 2, 2, 4, 4, 8, 4, 2, 4, 2, 2, 2, 4, 2];
 const SONG_BPM: u8 = 145;
 
-
 struct UartInput {
     address: *mut u8,
 }
@@ -35,7 +33,8 @@ struct UartInput {
 impl UartInput {
     fn new() -> Self {
         Self {
-            address: alloc_pages(Some(0x1000_0000), Some(0x1000_0000), 0x1000, 7).unwrap() as *mut _
+            address: alloc_pages(Some(0x1000_0000), Some(0x1000_0000), 0x1000, 7).unwrap()
+                as *mut _,
         }
     }
     fn get_byte(&mut self) -> u8 {
@@ -60,7 +59,7 @@ fn main() {
         s.push(c as char);
         if c as char == '\n' || c as char == '\r' {
             let s = s.into_iter().collect::<alloc::string::String>();
-            println!("You typed {}", s);
+            //println!("You typed {}", s);
             break;
         }
     }

@@ -1,5 +1,5 @@
 use kernel_cpu::load_hartid;
-use lock_api::{GuardNoSend, GuardSend, RawRwLock};
+use lock_api::{GuardSend, RawRwLock};
 
 pub use super::super::spin::RawRwLock as RawSpinRwLock;
 use crate::shared::{lock_and_disable_interrupts, unlock_and_enable_interrupts_if_necessary};

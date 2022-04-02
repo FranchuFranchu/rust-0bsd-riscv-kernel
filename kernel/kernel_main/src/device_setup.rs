@@ -10,7 +10,7 @@ use core::{
 };
 
 use crate::{
-    drivers::virtio::{VirtioDevice, VirtioDeviceType},
+    drivers::virtio::VirtioDevice,
     external_interrupt::ExternalInterruptHandler,
     fdt::PropertyValue,
     lock::shared::{Mutex, RwLock},
@@ -94,8 +94,6 @@ pub fn setup_devices() {
                     };
 
                     if virtio_device.is_present() {
-                        use alloc::sync::Arc;
-
                         // First, congigure the virtio device
                         virtio_device.configure();
                         // Put the device inside an Arc-Mutex

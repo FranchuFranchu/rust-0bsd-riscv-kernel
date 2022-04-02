@@ -4,10 +4,8 @@
 extern crate alloc;
 
 use alloc::{boxed::Box, string::String, vec::Vec};
-use core::str::Utf8Error;
 
 use async_trait::async_trait;
-use kernel_as_register::AsRegister;
 use kernel_syscall_abi::filesystem::{IoError as Error, IoErrorKind as ErrorKind};
 pub type Result<T> = core::result::Result<T, Error>;
 
@@ -60,7 +58,7 @@ pub trait Read {
         let mut v = alloc::vec::Vec::new();
         v.resize(len, 0);
         let result = self.read_exact(&mut v).await?;
-        let result = match result {
+        let _result = match result {
             Ok(e) => e,
             Err(e) => return Ok(Err(e)),
         };

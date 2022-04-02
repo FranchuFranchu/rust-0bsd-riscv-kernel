@@ -19,12 +19,11 @@ pub fn init() {
     let heap_end = unsafe { &_heap_end as *const c_void as usize };
     let heap_start = unsafe { &_heap_start as *const c_void as usize };
     let mut heap_size: usize = heap_end - heap_start;
+    println!("0x{:x}", heap_size);
 
     // Align the size to min heap size boundaries
     heap_size /= slab_allocator_rs::MIN_HEAP_SIZE;
     heap_size *= slab_allocator_rs::MIN_HEAP_SIZE;
-
-    println!("{:?}", heap_size);
 
     // SAFETY: This relies on the assumption that heap_end and heap_start are valid addresses (which are provided by the linker script)
     unsafe { ALLOCATOR.0.init(heap_start, heap_size) };

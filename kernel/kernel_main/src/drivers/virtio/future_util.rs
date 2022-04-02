@@ -1,35 +1,38 @@
-use alloc::{sync::Weak, sync::Arc};
-use core::task::{Poll, Context};
-use core::future::Future;
-use core::task::Waker;
-use core::pin::Pin;
-use alloc::collections::BTreeMap;
-use alloc::vec::Vec;
+use alloc::{
+    boxed::Box,
+    collections::BTreeMap,
+    sync::{Arc, Weak},
+    task::Wake,
+    vec::Vec,
+};
+use core::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll, Waker},
+};
 
-use kernel_lock::shared::RwLock;
+use kernel_lock::shared::{Mutex, RwLock};
 
-use crate::drivers::traits::block::BlockRequestFutureBuffer;
-use crate::interrupt_context_waker::InterruptContextWaker;
-use crate::unsafe_buffer::UnsafeSlice;
-use alloc::boxed::Box;
+use super::{SplitVirtqueue, VirtioDevice, VirtioDeviceType};
+use crate::{
+    drivers::traits::block::BlockRequestFutureBuffer,
+    interrupt_context_waker::InterruptContextWaker, unsafe_buffer::UnsafeSlice,
+};
 
-use super::{VirtioDevice, VirtioDeviceType};
-
-struct RequestFuture<RequestMeta, Driver: WrappedVirtioDeviceType> {
-    driver: Weak<RwLock<FutureVirtioDeviceType<Driver>>>,
-    header: (),
+pub struct RequestFuture<Driver: WrappedVirtioDeviceType + Send + Sync + 'static> {
+    pub driver: Weak<RwLock<FutureVirtioDeviceType<Driver>>>,
+    pub header: (),
 
     pub buffer: Option<BlockRequestFutureBuffer>,
-    pub meta: RequestMeta,
+    pub meta: Driver::RequestMeta,
     pub descriptor_id: Option<u16>,
     pub was_queued: bool,
 }
 
-
-impl<RequestMeta, Driver: WrappedVirtioDeviceType> Future for RequestFuture<RequestMeta, Driver> {
+impl<Driver: WrappedVirtioDeviceType + Send + Sync + 'static> Future for RequestFuture<Driver> {
     type Output = Option<BlockRequestFutureBuffer>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<<Self as Future>::Output>{
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<<Self as Future>::Output> {
         let device = self.driver.upgrade().unwrap();
         let mut device = device.write();
         if self.buffer.is_none() {
@@ -48,23 +51,24 @@ impl<RequestMeta, Driver: WrappedVirtioDeviceType> Future for RequestFuture<Requ
             // the block operation hasn't been started yet
             self.was_queued = true;
 
-            self.descriptor_id = Some(device.do_request(&mut self));
+            self.descriptor_id = Some(device.device_type.do_request(&mut *self));
             // Register ourselves as a waker
             device.register_waker(&self.descriptor_id.unwrap(), cx.waker().clone());
 
             // Release lock to prevent deadlocks
             drop(device);
-            self.device
+            self.driver
                 .upgrade()
                 .unwrap()
                 .write()
-                .begin_request(&self.descriptor_id.unwrap());
+                .device_type
+                .begin_request(self.descriptor_id.unwrap());
 
             Poll::Pending
         }
     }
 }
-impl<T: WrappedVirtioDeviceType> FutureVirtioDeviceType<T> {
+impl<Driver: WrappedVirtioDeviceType + Send + Sync + 'static> FutureVirtioDeviceType<Driver> {
     /// Sets up a callback future for when the device has finished processing a request we made
     fn poll_device(&mut self) {
         let result = {
@@ -82,43 +86,46 @@ impl<T: WrappedVirtioDeviceType> FutureVirtioDeviceType<T> {
         };
 
         if let Poll::Ready(queue_idx) = result {
-            assert!(queue_idx == 0);
-
             // Lock the vqueue
-            let mut vq_lock = self.request_virtqueue.lock();
+            let vq = self.device_type.get_virtqueue(queue_idx);
+            let mut vq_lock = vq.lock();
 
             // Create the iterator for this descriptor chain
-            let descriptor_chain_data_iterator = vq_lock.pop_used_element_to_iterator();
-            let descriptor_id = descriptor_chain_data_iterator.pointed_chain.unwrap();
-            
-            // Todo: Reconstruct whether this was a ReadInto or WriteFrom variant
-            let mut components = descriptor_chain_data_iterator.map(|s| unsafe {
-                BlockRequestFutureBuffer::WriteFrom(UnsafeSlice::new(
-                    core::slice::from_raw_parts_mut(s.as_ptr() as *const u8, s.len()),
-                ))
-            });
-            let buffer_box = components.nth(1).unwrap();
+            if let Some(descriptor_chain_data_iterator) = vq_lock.pop_used_element_to_iterator() {
+                let descriptor_id = descriptor_chain_data_iterator.pointed_chain.unwrap();
 
-            self.header_buffers.insert(descriptor_id, buffer_box);
+                // Todo: Reconstruct whether this was a ReadInto or WriteFrom variant
+                let mut components = descriptor_chain_data_iterator.map(|s| unsafe {
+                    BlockRequestFutureBuffer::WriteFrom(UnsafeSlice::new(
+                        core::slice::from_raw_parts_mut(
+                            s.as_ptr() as *const u8 as *mut u8,
+                            s.len(),
+                        ),
+                    ))
+                });
+                let buffer_box = components.nth(1).unwrap();
 
-            let items = self
-                .waiting_requests
-                .get_mut(&descriptor_id)
-                .map(|vec| vec.iter_mut());
+                self.header_buffers.insert(descriptor_id, buffer_box);
 
-            if items.is_none() {
-                info!("No one was waiting for this!");
-                return;
+                let items = self
+                    .waiting_requests
+                    .get_mut(&descriptor_id)
+                    .map(|vec| vec.iter_mut());
+
+                if items.is_none() {
+                    info!("No one was waiting for this!");
+                    return;
+                }
+
+                let items = items.unwrap();
+
+                for i in items.into_iter() {
+                    i.wake_by_ref();
+                }
+
+                self.waiting_requests.remove(&descriptor_id);
+                vq_lock.free_descriptor_chain(descriptor_id);
             }
-
-            let items = items.unwrap();
-
-            for i in items.into_iter() {
-                i.wake_by_ref();
-            }
-
-            self.waiting_requests.remove(&descriptor_id);
-            vq_lock.free_descriptor_chain(descriptor_id)
         } else {
             // It's pending, but we will be woken up eventually
         }
@@ -138,22 +145,35 @@ impl<T: WrappedVirtioDeviceType> FutureVirtioDeviceType<T> {
     }
 }
 
+pub trait WrappedVirtioDeviceType: Send + Sync + 'static {
+    type RequestMeta: Unpin;
+    type RequestBuildingData;
 
-pub trait WrappedVirtioDeviceType {
-	type RequestMeta;
-	type RequestBuildingData;
-    
     type Trait;
-	
-	fn create_request(&mut self, data: Self::RequestBuildingData) -> RequestFuture<Self::RequestMeta, Self> where Self: Sized;
-    fn device(&mut self) -> &mut VirtioDevice;
-	fn build_descriptor_chain(&mut self);
+
+    fn create_request(&mut self, data: Self::RequestBuildingData) -> RequestFuture<Self>
+    where
+        Self: Sized;
+    fn device(&self) -> &Mutex<VirtioDevice>;
+    fn from_device(device: Arc<Mutex<VirtioDevice>>) -> Self;
+    fn begin_request(&self, descriptor_id: u16);
+    fn do_request(&self, request: &mut RequestFuture<Self>) -> u16
+    where
+        Self: Sized;
+    fn get_virtqueue(&self, virtqueue_id: u16) -> &Mutex<SplitVirtqueue>;
+    fn set_this(&mut self, this: Weak<RwLock<FutureVirtioDeviceType<Self>>>)
+    where
+        Self: Sized;
+
+    fn instance_configure(&self) {
+        self.device().lock().driver_ok();
+    }
 }
 
-struct FutureVirtioDeviceType<T: WrappedVirtioDeviceType> {
+pub struct FutureVirtioDeviceType<Driver: WrappedVirtioDeviceType + Send + Sync + 'static> {
     pub this: Weak<RwLock<Self>>,
-    
-    pub device_type: T,
+
+    pub device_type: Driver,
 
     // A map between descriptor IDs and Wakers
     waiting_requests: BTreeMap<u16, Vec<Waker>>,
@@ -161,31 +181,76 @@ struct FutureVirtioDeviceType<T: WrappedVirtioDeviceType> {
     header_buffers: BTreeMap<u16, BlockRequestFutureBuffer>,
 }
 
-impl<T: WrappedVirtioDeviceType> VirtioDeviceType for FutureVirtioDeviceType<T> {
-    type Trait = T::Trait;
-    
-    fn configure(device: Arc<kernel_lock::shared::Mutex<VirtioDevice>>) -> Result<Arc<RwLock<Self::Trait>>, ()>
-    where
-            Self: Sized {
-        let q = device.lock().configure_queue(0);
-        let dev = VirtioBlockDevice {
-            request_virtqueue: Mutex::new(q),
-            device,
+impl<Driver: to_trait::ToTrait + WrappedVirtioDeviceType + Send + Sync + 'static> to_trait::ToTrait
+    for FutureVirtioDeviceType<Driver>
+{
+    fn cast_to_trait(self, target_type_id: core::any::TypeId) -> Option<Box<dyn to_trait::Null>> {
+        self.device_type.cast_to_trait(target_type_id)
+    }
+
+    fn cast_to_trait_ref(&self, target_type_id: core::any::TypeId) -> Option<&dyn to_trait::Null> {
+        self.device_type.cast_to_trait_ref(target_type_id)
+    }
+
+    fn cast_to_trait_mut(
+        &mut self,
+        target_type_id: core::any::TypeId,
+    ) -> Option<&mut dyn to_trait::Null> {
+        self.device_type.cast_to_trait_mut(target_type_id)
+    }
+}
+impl<Driver: WrappedVirtioDeviceType + Send + Sync + 'static> to_trait::ToTrait
+    for FutureVirtioDeviceType<Driver>
+{
+    default fn cast_to_trait(
+        self,
+        _target_type_id: core::any::TypeId,
+    ) -> Option<Box<dyn to_trait::Null>> {
+        None
+    }
+
+    default fn cast_to_trait_ref(
+        &self,
+        _target_type_id: core::any::TypeId,
+    ) -> Option<&dyn to_trait::Null> {
+        None
+    }
+
+    default fn cast_to_trait_mut(
+        &mut self,
+        _target_type_id: core::any::TypeId,
+    ) -> Option<&mut dyn to_trait::Null> {
+        None
+    }
+}
+
+impl<Driver: 'static + WrappedVirtioDeviceType + Send + Sync + Unpin> VirtioDeviceType
+    for FutureVirtioDeviceType<Driver>
+{
+    fn configure(
+        device: Arc<Mutex<VirtioDevice>>,
+    ) -> Result<Arc<RwLock<dyn to_trait::ToTraitAny + Send + Sync + Unpin>>, ()> {
+        let inner = Driver::from_device(device);
+        let device = Self {
             this: Weak::new(),
+            device_type: inner,
             waiting_requests: BTreeMap::new(),
             header_buffers: BTreeMap::new(),
         };
-        let dev = Arc::new(RwLock::new(dev));
-        dev.write().this = Arc::downgrade(&dev);
+        let device = Arc::new(RwLock::new(device));
+        device.write().this = Arc::downgrade(&device);
+        device.write().device_type.set_this(Arc::downgrade(&device));
 
         // setup wakers and similar stuff
-        dev.write().poll_device();
-
-        let dev_clone = dev.clone();
-        // Configure the instance later on (to prevent deadlocks)
-        Arc::new(InterruptContextWaker(Box::new(move || {
-            dev_clone.write().instance_configure();
-        })))
-        .wake();
+        device.write().poll_device();
+        {
+            let device = device.clone();
+            // Configure the instance later on (to prevent deadlocks)
+            Arc::new(InterruptContextWaker(Box::new(move || {
+                device.write().device_type.instance_configure();
+            })))
+            .wake();
+        }
+        Ok(device)
     }
 }

@@ -1,6 +1,10 @@
 /// Start and setup new harts
 use alloc::{boxed::Box, collections::BTreeMap, sync::Arc};
-use core::{arch::asm, pin::Pin, sync::atomic::AtomicBool};
+use core::{
+    arch::asm,
+    pin::Pin,
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+};
 
 use aligned::{Aligned, A16};
 
@@ -8,10 +12,9 @@ use crate::{
     cpu::{self, load_hartid},
     lock::shared::RwLock,
     plic::Plic0,
-    process::{self, TASK_STACK_SIZE},
+    process::{self, try_get_process, TASK_STACK_SIZE},
     s_trap_vector, sbi,
     scheduler::schedule_next_slice,
-    test_task::boxed_slice_with_alignment,
     timer_queue,
     trap::TrapFrame,
 };
@@ -22,6 +25,19 @@ pub struct HartMeta {
     pub boot_stack: Option<Box<Aligned<A16, [u8; TASK_STACK_SIZE]>>>,
     pub boot_frame: RwLock<Pin<Box<TrapFrame>>>,
     pub is_panicking: AtomicBool,
+    pub idle_process: AtomicUsize,
+}
+
+impl HartMeta {
+    pub fn get_idle_process(&self) -> Option<usize> {
+        match self.idle_process.load(Ordering::Acquire) {
+            0 => None,
+            pid => Some(pid),
+        }
+    }
+    pub fn set_idle_process(&self, id: Option<usize>) {
+        self.idle_process.store(id.unwrap_or(0), Ordering::Release);
+    }
 }
 
 pub static HART_META: RwLock<BTreeMap<usize, Arc<HartMeta>>> = RwLock::new(BTreeMap::new());
@@ -39,6 +55,7 @@ pub unsafe fn add_boot_hart(trap_frame: TrapFrame) {
         boot_stack: None,
         boot_frame: RwLock::new(Pin::new(Box::new(trap_frame))),
         is_panicking: AtomicBool::new(false),
+        idle_process: AtomicUsize::new(0),
     };
     HART_META.write().insert(load_hartid(), Arc::new(meta));
 }
@@ -67,6 +84,7 @@ pub fn add_this_secondary_hart(hartid: usize, interrupt_sp: usize) {
             boot_stack: None,
             boot_frame: RwLock::new(trap_frame),
             is_panicking: AtomicBool::new(false),
+            idle_process: AtomicUsize::new(0),
         }),
     );
 }
@@ -89,7 +107,7 @@ pub unsafe fn start_all_harts(start_addr: usize) {
                 if status == 1 {
                     // This hart is stopped
                     // Create a stack for it and pass it in a1
-                    let process_stack = boxed_slice_with_alignment(4096 * 8, 4096, &0);
+                    let process_stack = kernel_util::boxed_slice_with_alignment(4096 * 8, 4096, &0);
                     sbi::start_hart(
                         hartid,
                         start_addr,

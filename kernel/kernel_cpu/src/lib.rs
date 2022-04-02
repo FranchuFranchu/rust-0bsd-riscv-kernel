@@ -1,6 +1,5 @@
 //! Functions that run specific RISC-V instructions
 #![no_std]
-#![feature(asm)]
 
 use core::arch::asm;
 

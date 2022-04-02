@@ -63,11 +63,11 @@ impl<T: ?Sized> ArcInner<T> {
         drop(Box::from_raw(self as *const Self as *mut Self))
     }
     unsafe fn drop_data(&self) {
-        ManuallyDrop::drop(unsafe {
+        ManuallyDrop::drop(
             (&self.data as *const ManuallyDrop<T> as *mut ManuallyDrop<T>)
                 .as_mut()
-                .unwrap()
-        })
+                .unwrap(),
+        )
     }
 }
 impl<T> ArcInner<T> {

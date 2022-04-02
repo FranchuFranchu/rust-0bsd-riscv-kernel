@@ -1,8 +1,7 @@
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::ops::{Add, Div, Sub};
 
-use kernel_io::{Read, Write};
-use kernel_lock::shared::RawRwLock;
+use kernel_io::Read;
 pub use kernel_syscall_abi::filesystem::Ext2Error;
 
 use super::{
@@ -10,7 +9,7 @@ use super::{
     structures::{BlockGroupDescriptor, DirectoryEntry, Inode, OwnedDirectoryEntry, Superblock},
 };
 use crate::{
-    drivers::traits::block::{GenericBlockDevice, GenericBlockDeviceError, GenericBlockDeviceExt},
+    drivers::traits::block::{GenericBlockDevice, GenericBlockDeviceExt},
     lock::shared::RwLock,
 };
 
@@ -36,8 +35,6 @@ trait DivCeil {
         (self + rhs - Self::from(1u8)) / rhs
     }
 }
-
-use crate::as_register::AsRegister;
 
 pub type Result<T> = core::result::Result<T, Ext2Error>;
 
@@ -117,7 +114,7 @@ impl Ext2 {
 
         let v = self.read_block(start_block + block_group_block).await?;
 
-        /// SAFETY: No use-after-free since we're cloning it after borrowing it
+        // SAFETY: No use-after-free since we're cloning it after borrowing it
         let descriptor = unsafe {
             (v.split_at(offset as usize).1.as_ptr() as *const BlockGroupDescriptor)
                 .as_ref()
@@ -238,7 +235,7 @@ impl Ext2 {
         let v = self
             .read_block(inode_table_block + inode_block_offset)
             .await?;
-        /// SAFETY: No use-after-free since we're cloning it after borrowing it
+        // SAFETY: No use-after-free since we're cloning it after borrowing it
         Ok(unsafe {
             (v[inode_byte_offset..].as_ptr() as *const Inode)
                 .as_ref()

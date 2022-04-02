@@ -2,7 +2,6 @@
 
 #![no_std]
 #![feature(
-    asm,
     allocator_api,
     ptr_metadata,
     nonnull_slice_from_raw_parts,

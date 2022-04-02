@@ -6,11 +6,7 @@ extern crate proc_macro_error;
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::ToTokens;
-use syn::{
-    parse_macro_input,
-    token::{Enum, Paren},
-    Data, DeriveInput, Expr, ExprPath, Fields, Path,
-};
+use syn::{parse_macro_input, token::Paren, Data, DeriveInput, Expr, ExprPath, Fields, Path};
 
 #[proc_macro_error]
 #[proc_macro_derive(KError)]

@@ -3,7 +3,6 @@ use alloc::sync::Arc;
 use kernel_lock::shared::{Mutex, RwLock};
 
 use super::{VirtioDevice, VirtioDeviceType};
-use crate::drivers::traits::net::GenericNetworkDevice;
 
 #[repr(u8)]
 pub enum GsoTypes {
@@ -32,12 +31,12 @@ pub struct VirtioNetworkDevice {}
 
 impl VirtioDeviceType for VirtioNetworkDevice {
     fn configure(
-        device: Arc<Mutex<VirtioDevice>>,
+        _device: Arc<Mutex<VirtioDevice>>,
     ) -> Result<Arc<RwLock<dyn to_trait::ToTraitAny + Send + Sync + Unpin>>, ()>
     where
         Self: Sized,
     {
-        let r = Arc::new(RwLock::new(VirtioNetworkDevice {}));
+        Arc::new(RwLock::new(VirtioNetworkDevice {}));
         todo!()
     }
 }

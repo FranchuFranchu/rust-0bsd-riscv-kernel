@@ -48,7 +48,6 @@ impl TrapFrameExt for TrapFrame {
     }
 
     unsafe fn satp_as_sv39_root_table(&mut self) -> RootTable<'static> {
-        use crate::paging::sv39::RootTable;
         RootTable(((self.satp << 12) as *mut Table).as_mut().unwrap())
     }
 

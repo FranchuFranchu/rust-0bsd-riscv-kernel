@@ -1,20 +1,26 @@
 // For the legacy interface
 
 pub mod block;
+pub mod future_util;
+pub mod gpu;
 pub mod net;
 
 use alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
-use core::{alloc::Layout, convert::TryInto, future::Future, slice, task::Waker};
+use core::{alloc::Layout, convert::TryInto, future::Future, mem::MaybeUninit, slice, task::Waker};
 
 use itertools::Itertools;
 use volatile_register::{RO, RW, WO};
 
-use self::{block::VirtioBlockDevice, net::VirtioNetworkDevice};
+use self::{block::VirtioBlockDevice, gpu::VirtioGpuDriverE, net::VirtioNetworkDevice};
 use crate::{
     lock::shared::{Mutex, RwLock},
     paging::PAGE_ALIGN,
     unsafe_buffer::{UnsafeSlice, UnsafeSliceMut},
 };
+
+pub trait ByteSized {}
+impl ByteSized for u8 {}
+impl ByteSized for MaybeUninit<u8> {}
 
 // from xv6
 pub enum StatusField {
@@ -273,7 +279,7 @@ impl SplitVirtqueue {
         self.get_descriptor_mut(descriptor).address = 0
     }
 
-    fn free_descriptor_chain(&mut self, mut descriptor: u16) {
+    fn free_descriptor_chain(&mut self, descriptor: u16) {
         let mut descriptor = self.get_descriptor_mut(descriptor);
         while descriptor.next != 0 {
             descriptor.address = 0;
@@ -379,7 +385,7 @@ impl SplitVirtqueue {
     /// Whoever is using this needs to make sure to run Box::from_raw on the Buffer when needed
     pub fn new_descriptor_from_boxed_slice(
         &mut self,
-        buffer: Box<[u8]>,
+        buffer: Box<[impl ByteSized]>,
         device_writable: bool,
         chain: Option<u16>,
     ) -> u16 {
@@ -421,7 +427,6 @@ impl SplitVirtqueue {
 
     pub fn get_available_ring_ptr(&mut self, index: u16) -> *mut u16 {
         unsafe {
-            use core::ops::Add;
             (self.pointer.add(Self::available_ring_offset(&self.size)) as *mut u16)
                 .add(2)
                 .add(index as usize)
@@ -429,15 +434,11 @@ impl SplitVirtqueue {
     }
 
     pub fn get_device_used_ring_idx(&mut self) -> u16 {
-        unsafe {
-            use core::ops::Add;
-            *((self.pointer.add(Self::used_ring_offset(&self.size)) as *mut u16).add(1))
-        }
+        unsafe { *((self.pointer.add(Self::used_ring_offset(&self.size)) as *mut u16).add(1)) }
     }
 
     pub fn get_used_ring_ptr(&mut self, index: u16) -> *mut SplitVirtqueueUsedRing {
         unsafe {
-            use core::ops::Add;
             ((self.pointer.add(Self::used_ring_offset(&self.size)) as *mut u16).add(2)
                 as *mut SplitVirtqueueUsedRing)
                 .add(index as usize)
@@ -464,12 +465,12 @@ impl SplitVirtqueue {
 
     pub fn pop_used_element_to_iterator<'this>(
         &'this mut self,
-    ) -> SplitVirtqueueDescriptorChainIterator<'this> {
-        let u = self.pop_used_element().unwrap();
-        SplitVirtqueueDescriptorChainIterator {
+    ) -> Option<SplitVirtqueueDescriptorChainIterator<'this>> {
+        let u = self.pop_used_element()?;
+        Some(SplitVirtqueueDescriptorChainIterator {
             queue: self,
             pointed_chain: Some(unsafe { (*u).idx } as u16),
-        }
+        })
     }
 
     /// Returns the "Guest physical page number of the virtual queue"
@@ -631,6 +632,12 @@ impl VirtioDevice {
                 let dev = VirtioBlockDevice::configure(this).unwrap();
                 Some(dev)
             }
+            16 => {
+                // gpu device
+                VirtioGpuDriverE::negotiate_features(&mut this.lock());
+                let dev = VirtioGpuDriverE::configure(this).unwrap();
+                Some(dev)
+            }
             _ => {
                 warn!("Unknown/Unimplemented VirtIO device type: {}", unsafe {
                     (*this.lock().configuration).device_id.read()
@@ -727,6 +734,8 @@ impl VirtioDevice {
         }
     }
 }
+
+unsafe impl Sync for VirtioDevice {}
 
 pub trait VirtioDeviceType {
     fn configure(

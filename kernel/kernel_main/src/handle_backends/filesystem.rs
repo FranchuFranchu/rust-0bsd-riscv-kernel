@@ -1,6 +1,6 @@
 use alloc::{boxed::Box, collections::BTreeMap, sync::Arc};
 
-use kernel_as_register::{AsRegister, EncodedError};
+use kernel_as_register::EncodedError;
 use kernel_syscall_abi::filesystem::FilesystemError;
 
 use super::call_as_register_function;
@@ -9,7 +9,7 @@ use crate::{
     drivers::{traits::block::GenericBlockDevice, virtio::VirtioDriver},
     external_interrupt::ExternalInterruptHandler,
     fdt,
-    filesystem::ext2::{inode_handle, Ext2, Ext2Error, InodeHandleState},
+    filesystem::ext2::{Ext2, InodeHandleState},
     handle::HandleBackend,
     lock::shared::RwLock,
 };

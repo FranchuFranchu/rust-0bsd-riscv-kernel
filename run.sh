@@ -28,6 +28,11 @@ if [ $INT == "yes" ]; then
 	export QEMUOPT_D="int,$QEMUOPT_D"
 fi
 
+if [ $GFX == "yes" ]; then 
+	export QEMUOPTS="-device virtio-gpu-device $QEMUOPTS"
+else
+	export QEMUOPTS="-nographic"
+fi
 
 
 qemu-system-riscv$BITS $QEMUOPTS \
@@ -39,8 +44,7 @@ qemu-system-riscv$BITS $QEMUOPTS \
 	-d $QEMUOPT_D \
 	-blockdev driver=file,filename=`dirname $0`/drive.img,node-name=hda \
 	-device virtio-blk-device,drive=hda \
-	-nographic \
-	-smp 1 \
+	-smp 3 \
 	-m 128M \
 	-device ne2k_pci \
 	-kernel $3 

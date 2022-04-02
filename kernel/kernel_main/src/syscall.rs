@@ -1,15 +1,12 @@
 use kernel_syscall_abi::*;
-use num_enum::{FromPrimitive, IntoPrimitive};
 
 use crate::{
     context_switch,
     cpu::{write_satp, Registers},
     paging::{EntryBits, Paging},
     process::{self, try_get_process},
-    test_task::boxed_slice_with_alignment,
     trap_frame::{TrapFrame, TrapFrameExt},
     trap_future_executor::block_and_return_to_userspace,
-    virtual_buffers,
 };
 
 pub fn do_syscall(frame: *mut TrapFrame) {
@@ -39,7 +36,7 @@ pub fn do_syscall(frame: *mut TrapFrame) {
             let mut root_table = unsafe { frame.satp_as_sv39_root_table() };
 
             let physical_addr = if physical_addr == usize::MAX {
-                let new_pages = boxed_slice_with_alignment(size, 4096, &0u8);
+                let new_pages = kernel_util::boxed_slice_with_alignment(size, 4096, &0u8);
                 let physical_addr = &new_pages[0] as *const u8 as usize;
                 core::mem::forget(new_pages);
                 physical_addr

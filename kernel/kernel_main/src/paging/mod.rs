@@ -96,8 +96,6 @@ impl Entry {
     /// If this entry is a megapage, for example, the increment should be PAGE_SIZE
 
     pub unsafe fn split(&mut self, increment: usize) {
-        use alloc::boxed::Box;
-
         let mut table = Box::new(Table::zeroed());
         let mut current_address = self.value & EntryBits::ADDRESS_MASK;
 
@@ -214,7 +212,7 @@ pub fn map_critical_kernel_address_space(table: &mut impl Paging, trap_frame: us
 
 use alloc::boxed::Box;
 
-use kernel_cpu::csr::SATP_BARE;
+use kernel_cpu::csr::{SATP_BARE, SATP_SV39};
 
 pub trait PagingDebug: Paging + Debug {}
 pub fn get_active_root_table(satp: usize) -> Option<Box<dyn PagingDebug>> {

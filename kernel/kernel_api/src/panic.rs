@@ -1,15 +1,6 @@
 #![allow(rust_analyzer::inactive_code)]
 
-use alloc::{
-    alloc::Global,
-    string::{String, ToString},
-};
-use core::{
-    any::TypeId,
-    clone,
-    fmt::{Arguments, Write},
-    panic::PanicInfo,
-};
+use core::{fmt::Write, panic::PanicInfo};
 
 use crate::Handle;
 
@@ -41,7 +32,7 @@ fn panic_handler(info: &PanicInfo) -> ! {
         Ok(mut log_output) => {
             panic_handler_with_stream(info, &mut log_output);
         }
-        Err(e) => crate::exit(),
+        Err(_e) => crate::exit(),
     }
     crate::exit()
 }

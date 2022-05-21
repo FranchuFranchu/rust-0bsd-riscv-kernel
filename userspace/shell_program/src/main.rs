@@ -48,6 +48,7 @@ impl UartInput {
 
 #[no_mangle]
 fn main() {
+    loop {};
     GLOBAL_ALLOCATOR.initialize_min_size().unwrap();
     let log_output = Handle::open(1, &[]).unwrap();
     log_output.write(b"Hello from shell_program (/main)\n", &[]);

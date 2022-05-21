@@ -15,7 +15,7 @@ export BITS=$1
 
 if [ $GDB == "yes" ]; then
 	lxterminal -e 'riscv'$BITS'-elf-gdb target/'$ARCH'-unknown-none-elf/debug/rust-0bsd-riscv-kernel\
-	-ex "target remote cuarto.localdomain:1234"\
+	-ex "target remote 0.0.0.0:1234"\
 	-ex "break rust_0bsd_riscv_kernel::panic"\
 	-ex "alias print_hartids = p [\$mhartid, rust_0bsd_riscv_kernel::cpu::load_hartid()]"\
 	-ex "alias phids = print_hartids"\

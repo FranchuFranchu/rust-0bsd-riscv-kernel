@@ -136,10 +136,21 @@ pub fn read_sstatus() -> usize {
 }
 
 #[inline(always)]
-pub fn read_time() -> usize {
-    let value: usize;
-    unsafe { asm!("csrr {0}, time", out(reg)(value),) };
-    value
+pub fn read_time() -> u64 {
+    #[cfg(target_arch = "riscv32")]
+    {
+        let timeh: u32;
+        let timel: u32;
+        unsafe { asm!("csrr {0}, timeh", out(reg)(timeh),) };
+        unsafe { asm!("csrr {0}, time", out(reg)(timel),) };
+        timeh << 32 | timel
+    }
+    #[cfg(target_arch = "riscv64")]
+    {
+        let timel: u64;
+        unsafe { asm!("csrr {0}, time", out(reg)(timel),) };
+        timel
+    }
 }
 
 #[inline(always)]
@@ -168,6 +179,7 @@ pub fn wfi() {
     }
 }
 
+#[inline(always)]
 pub fn fence_vma() {
     unsafe { asm!("sfence.vma zero, zero") };
 }
@@ -253,4 +265,23 @@ pub mod csr {
     pub const SATP_SV39: usize = 8 << 60;
     #[cfg(target_arch = "riscv64")]
     pub const SATP_SV48: usize = 9 << 60;
+    
+    pub const XCAUSE_DESCRIPTION: [&'static str; 16] = [
+        "Instruction address misaligned",
+        "Instruction access fault",
+        "Illegal instruction",
+        "Breakpoint",
+        "Load address misaligned",
+        "Load access fault",
+        "Store/AMO address misaligned",
+        "Store/AMO access fault",
+        "Enviornment call from U-mode",
+        "Enviornment call from S-mode",
+        "<Reserved>",
+        "Enviornment call from M-mode",
+        "Instruction page fault",
+        "Load page fault",
+        "<Reserved>",
+        "Store/AMO page fault",
+    ];
 }

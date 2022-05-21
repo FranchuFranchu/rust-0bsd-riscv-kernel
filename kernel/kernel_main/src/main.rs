@@ -47,6 +47,7 @@ use core::{
 
 use process::PROCESSES;
 
+use crate::paging::EntryBits::{RWX, VALID, self};
 use crate::{
     cpu::{load_hartid, read_sscratch},
     hart::get_hart_meta,
@@ -136,9 +137,10 @@ pub fn main(hartid: usize, opaque: usize) -> ! {
         BOOT_FRAME.satp = cpu::read_satp();
         BOOT_FRAME.kernel_satp = cpu::read_satp();
     }
-
+    
+    
     cpu::fence_vma();
-
+    
     get_time_setup();
 
     //let virt_buffer = new_virtual_buffer(0x1000_0000, 0x4096);

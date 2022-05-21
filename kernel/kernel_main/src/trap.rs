@@ -193,7 +193,9 @@ pub unsafe extern "C" fn trap_handler(
                     }
                 );
                 // Kill the process
-                delete_process((*frame).pid);
+                if (*frame).pid > 1 {
+                    delete_process((*frame).pid);
+                }
                 loop {} //panic!("Non-interrupt trap");
             }
         }

@@ -5,7 +5,7 @@ use core::{
     task::{Poll, Waker},
 };
 
-use cpu::MMIO_MTIME;
+use cpu::{MMIO_MTIME, read_time};
 
 use crate::{
     cpu, lock::shared::RwLock, paging::PAGE_ALIGN, timer_queue, virtual_buffers::new_virtual_buffer,
@@ -20,12 +20,15 @@ pub static MMIO_MTIME_VIRT_BUFFER_ADDR: RwLock<Option<usize>> = RwLock::new(None
 // Uses a virt buffer, so it
 pub fn get_time_setup() {
     let mmio_mtime_aligned = (MMIO_MTIME as usize) & !(PAGE_ALIGN - 1);
-
+    
+    //println!("{:?}", unsafe {*MMIO_MTIME});
     let virt = new_virtual_buffer(mmio_mtime_aligned, 0x1000);
+    println!("{:x}", MMIO_MTIME as usize);
     println!("{:x}", virt + ((MMIO_MTIME as usize) & (PAGE_ALIGN - 1)));
     *MMIO_MTIME_VIRT_BUFFER_ADDR.write() = Some(virt + ((MMIO_MTIME as usize) & (PAGE_ALIGN - 1)))
 }
 pub fn get_time() -> u64 {
+    return unsafe { kernel_cpu::read_time() };
     unsafe {
         match &*MMIO_MTIME_VIRT_BUFFER_ADDR.read() {
             Some(a) => *((*a) as *const u64),

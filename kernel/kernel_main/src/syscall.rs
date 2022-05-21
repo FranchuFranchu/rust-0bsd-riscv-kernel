@@ -58,9 +58,9 @@ pub fn do_syscall(frame: *mut TrapFrame) {
                 let mut run_length = 0;
                 let mut first_page_in_set = None;
                 for i in (0x1000..0x80000000).step_by(4096) {
-                    if let Some(page) = unsafe { root_table.query(i) } {
+                    if let Ok(page) = unsafe { root_table.query(i) } {
                         // This page is used
-                        if page & EntryBits::USER != 0 {
+                        if page.0.value & EntryBits::USER != 0 {
                             run_length = 0;
                             continue;
                         }
@@ -77,7 +77,7 @@ pub fn do_syscall(frame: *mut TrapFrame) {
             } else {
                 virtual_address
             };
-
+            
             let size = size.div_ceil(4096) * 4096;
             let paging_flags = flags & EntryBits::RWX;
 

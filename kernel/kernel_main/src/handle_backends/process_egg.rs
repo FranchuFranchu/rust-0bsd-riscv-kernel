@@ -103,7 +103,7 @@ impl<'this> HandleBackend for ProcessEggBackend {
                     (page_aligned_address..(page_aligned_address + data.len())).step_by(4096);
                 let iter2 = iter1.clone();
                 let mut get_slice_for_page = |page_number| -> &'static mut [u8] {
-                    if let Some(physical_address) = unsafe { table.query(page_number) } {
+                    if let Ok(physical_address) = unsafe { table.query_physical_address(page_number) } {
                         unsafe { core::slice::from_raw_parts_mut(physical_address as *mut _, 4096) }
                     } else {
                         let mut slice = boxed_slice_with_alignment(4096, 4096, &0u8);

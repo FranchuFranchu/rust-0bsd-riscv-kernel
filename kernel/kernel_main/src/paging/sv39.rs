@@ -14,6 +14,7 @@ pub unsafe fn identity_map(root: *mut Table) {
 #[derive(Debug)]
 pub struct RootTable<'a>(pub &'a mut Table);
 
+
 impl<'a> Paging for RootTable<'a> {
     fn map(&mut self, physical_addr: usize, virtual_addr: usize, length: usize, flags: usize) {
         let vpn2_min = (virtual_addr >> 30) & (ENTRY_COUNT - 1);
@@ -65,21 +66,23 @@ impl<'a> Paging for RootTable<'a> {
                         for vpn0 in vpn0_min..vpn0_max {
                             let mut entry = &mut table[vpn0];
                             let virt = vpn2 << 30 | vpn1 << 21 | vpn0 << 12;
-                            entry.value = (virt >> 2 | flags).wrapping_add(offset);
+                            // TODO: Write down somewhere that qemu doesn't care when using info mem
+                            // if the high bits are set. Ask qemu to change this (later)
+                            entry.value = (virt >> 2 | flags).wrapping_add(offset) & (2usize.pow(54) - 1);
                             //println!("  vp0 {} {:x} {:?}", vpn0, virt, entry);
                             //println!("newval {:x}", entry.value);
                         }
                     } else {
                         //println!("oldval {:?}", entry);
                         //println!("virt {:x}", (vpn2 << 30 | vpn1 << 21));
-                        entry.value = (vpn2 << 28 | vpn1 << 19 | flags).wrapping_add(offset);
+                        entry.value = (vpn2 << 28 | vpn1 << 19 | flags).wrapping_add(offset) & (2usize.pow(54) - 1);
                         //println!("newval {:?}", entry);
                     }
                 }
             } else {
                 //println!("oldval {:x}", entry.value);
                 //println!("virt {:x}", (vpn2 << 30));
-                entry.value = (vpn2 << 28 | flags).wrapping_add(offset);
+                entry.value = (vpn2 << 28 | flags).wrapping_add(offset) & (2usize.pow(54) - 1);
                 //println!("newval {:x}", entry.value);
             }
         }
@@ -91,27 +94,29 @@ impl<'a> Paging for RootTable<'a> {
 
         //info!("entry");
     }
-    unsafe fn query(&self, virtual_addr: usize) -> Option<usize> {
+    unsafe fn query(&self, virtual_addr: usize) -> Result<(Entry, usize), PageLookupError> {
         let vpn2 = (virtual_addr >> 30) & (ENTRY_COUNT - 1);
         let vpn1 = (virtual_addr >> 21) & (ENTRY_COUNT - 1);
         let vpn0 = (virtual_addr >> 12) & (ENTRY_COUNT - 1);
+        let offset = virtual_addr & (ENTRY_COUNT - 1);
         let table = &self.0;
         if let Some(table) = table[vpn2].try_as_table() {
             if let Some(table) = table[vpn1].try_as_table() {
+                assert!(table[vpn0].is_leaf());
                 if table[vpn0].value & EntryBits::VALID == 0 {
-                    None
+                    Err(PageLookupError::Invalid)
                 } else {
-                    Some((table[vpn0].value))
+                    Ok((table[vpn0], offset))
                 }
             } else if table[vpn1].value & EntryBits::VALID == 0 {
-                None
+                Err(PageLookupError::Invalid)
             } else {
-                Some((table[vpn1].value) + vpn0)
+                Ok((table[vpn1], offset + vpn0 * ENTRY_COUNT))
             }
         } else if table[vpn2].value & EntryBits::VALID == 0 {
-            None
+            Err(PageLookupError::Invalid)
         } else {
-            Some((table[vpn2].value) + vpn0 + vpn1 * ENTRY_COUNT)
+            Ok((table[vpn2], offset + vpn0 * ENTRY_COUNT + vpn1 * ENTRY_COUNT * ENTRY_COUNT))
         }
     }
     fn identity_map(&mut self) {

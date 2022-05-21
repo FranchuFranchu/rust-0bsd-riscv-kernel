@@ -42,6 +42,18 @@ pub mod EntryBits {
     pub const DATA_SUPERVISOR: usize = 1 << 1 | 1 << 2 | 1;
 }
 
+pub enum PageLookupError {
+    PageFault,
+    AccessFault,
+    /// bits 54 or more are set
+    ReservedBitSet,
+    /// if pte.v = 0, 
+    Invalid,
+    /// if pte.r = 0 and pte.w = 1,
+    WriteOnly,
+    
+}
+
 #[derive(Default, Copy, Clone)]
 pub struct Entry {
     pub value: usize,
@@ -58,7 +70,7 @@ impl Entry {
     /// The entry's value must be a valid physical address pointer
     pub unsafe fn as_table_mut(&mut self) -> &mut Table {
         assert!(self.value & 1 != 0);
-        (((self.value & EntryBits::ADDRESS_MASK) << 2) as *mut Table)
+        (self.address() as *mut Table)
             .as_mut()
             .unwrap()
     }
@@ -66,7 +78,7 @@ impl Entry {
     /// The entry's value must be a valid physical address pointer
     pub unsafe fn as_table(&self) -> &Table {
         assert!(self.value & 1 != 0);
-        (((self.value & EntryBits::ADDRESS_MASK) << 2) as *mut Table)
+        (self.address() as *mut Table)
             .as_ref()
             .unwrap()
     }
@@ -85,9 +97,13 @@ impl Entry {
             Some(self.as_table())
         }
     }
+    
+    pub fn ppn_index(&self, index: u8) -> u8 {
+        ((self.value >> 10) >> index * 8) as u8 & u8::MAX
+    }
 
     pub fn is_leaf(&self) -> bool {
-        (self.value & EntryBits::RWX) != 0
+        (self.value & (EntryBits::READ | EntryBits::EXECUTE)) != 0
             || (self.value & EntryBits::VALID == 0)
             || (self.value & EntryBits::ADDRESS_MASK) == 0
     }
@@ -113,6 +129,10 @@ impl Entry {
         debug_assert!(!self.is_leaf());
         debug_assert!(self.value & 1 != 0);
         debug_assert!(self.value & EntryBits::RWX == 0);
+    }
+    
+    pub fn address(&self) -> usize {
+        (self.value & EntryBits::ADDRESS_MASK) << 2
     }
 }
 
@@ -143,7 +163,7 @@ impl Debug for Entry {
                 f.write_char('U')?;
             }
             f.write_char(' ')?;
-            f.write_fmt(format_args!("{:x}", (self.value & ADDRESS_MASK) << 2));
+            f.write_fmt(format_args!("{:x}", (self.value & ADDRESS_MASK) << 2))?;
         }
         f.write_char('>')?;
         Ok(())
@@ -180,7 +200,10 @@ impl IndexMut<usize> for Table {
 
 pub trait Paging {
     fn map(&mut self, physical_addr: usize, virtual_addr: usize, length: usize, flags: usize);
-    unsafe fn query(&self, virtual_addr: usize) -> Option<usize>;
+    unsafe fn query(&self, virtual_addr: usize) -> Result<(Entry, usize), PageLookupError>;
+    unsafe fn query_physical_address(&self, virtual_addr: usize) -> Result<usize, PageLookupError> {
+        self.query(virtual_addr).map(|(entry, offset)| entry.address() + offset)
+    }
     fn identity_map(&mut self);
 }
 
